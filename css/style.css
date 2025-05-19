@@ -1,0 +1,434 @@
+/* css/style.css */
+:root {
+    --header-height: 50px;
+    --footer-height: 40px;
+    --left-toolbar-width: 60px;
+    /* Adjusted for icons */
+    --border-color: #ccc;
+    --table-border-color: #999;
+    /* Darker for table itself */
+    --highlight-color: #a8d8ff;
+    /* Light blue for row highlight */
+    --table-header-bg: #e9e9e9;
+    --cell-padding: 3px 5px;
+    --row-height: 22px;
+    --font-size-main: 13px;
+    --font-size-small: 11px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: var(--font-size-main);
+    line-height: 1.4;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    background-color: #f4f4f4;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+}
+
+.app-header {
+    padding: 8px 10px;
+    background-color: #e9e9e9;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--header-height);
+    flex-shrink: 0;
+}
+
+.app-header label {
+    margin-left: 8px;
+    margin-right: 3px;
+    font-size: var(--font-size-small);
+}
+
+.app-header input[type="number"] {
+    width: 60px;
+    padding: 4px;
+    font-size: var(--font-size-small);
+}
+
+.app-header button {
+    padding: 5px 10px;
+    font-size: var(--font-size-small);
+}
+
+.main-content-area {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+#left-toolbar {
+    width: var(--left-toolbar-width);
+    padding: 10px 5px;
+    background-color: #f0f0f0;
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    /* Reduced gap */
+    align-items: center;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+#left-toolbar .tool-group-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+    font-size: 0.8em;
+    text-align: center;
+    width: 100%;
+}
+
+#left-toolbar button {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 1.4em;
+    border-radius: 4px;
+}
+
+#left-toolbar button.active-tool {
+    background-color: #4CAF50;
+    color: white;
+}
+
+#left-toolbar input[type="color"] {
+    width: 40px;
+    height: 30px;
+    padding: 2px;
+    border: 1px solid var(--border-color);
+}
+
+#left-toolbar label {
+    font-size: 0.75em;
+    margin-top: 8px;
+    display: block;
+    text-align: center;
+}
+
+#left-toolbar select {
+    width: calc(100% - 10px);
+    margin: 0 5px;
+    padding: 3px;
+    font-size: 0.8em;
+}
+
+#left-toolbar hr {
+    width: 80%;
+    margin: 8px auto;
+    border: 0;
+    border-top: 1px solid #ddd;
+}
+
+
+#xsheet-and-metadata-section {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    overflow: hidden;
+}
+
+#metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 5px 10px;
+    margin-bottom: 10px;
+    font-size: var(--font-size-small);
+}
+
+#metadata-grid div {
+    border: 1px solid var(--table-border-color);
+    padding: 3px 5px;
+    background-color: #fff;
+    display: flex;
+    align-items: center;
+}
+
+#metadata-grid span {
+    font-weight: bold;
+    margin-right: 5px;
+    white-space: nowrap;
+}
+
+#metadata-grid input {
+    border: none;
+    width: 100%;
+    flex-grow: 1;
+    margin-left: 5px;
+    background: transparent;
+    padding: 2px;
+    font-size: var(--font-size-small);
+}
+
+#metadata-grid input[type="date"] {
+    width: auto;
+    flex-grow: 0;
+}
+
+
+#xsheet-container {
+    flex-grow: 1;
+    overflow: auto;
+    position: relative;
+    /* For positioning overlay canvases */
+    border: 1px solid var(--table-border-color);
+    background-color: #fff;
+}
+
+#xsheetTable {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: var(--font-size-small);
+}
+
+#xsheetTable thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    /* Above table body and simple overlays */
+    background-color: var(--table-header-bg);
+}
+
+#xsheetTable th,
+#xsheetTable td {
+    border: 1px solid var(--table-border-color);
+    padding: var(--cell-padding);
+    vertical-align: top;
+    /* Align content to the top of cells */
+    height: var(--row-height);
+    line-height: calc(var(--row-height) - 2 * 3px - 2px);
+    /* Attempt to vertically center single line text */
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#xsheetTable th {
+    font-weight: bold;
+    text-align: center;
+}
+
+/* Column classes (match LOGICAL_COLUMNS in xsheet.js) */
+.action-col {
+    width: 20%;
+}
+
+.frame-col {
+    width: 4%;
+    text-align: center;
+    background-color: #f0f0f0;
+}
+
+.waveform-col {
+    width: 10%;
+    padding: 0 !important;
+    /* Remove padding for canvas */
+}
+
+.dialogue-col {
+    width: 12%;
+    text-align: left;
+}
+
+.sound-col {
+    width: 10%;
+    text_align: left;
+}
+
+.technical-col {
+    width: 12%;
+}
+
+.extra1-col,
+.extra2-col {
+    width: 8%;
+}
+
+.camera-col {
+    width: 14%;
+}
+
+/* Row styling */
+#xsheetTable tr.even-row td:not(.frame-col) {
+    background-color: #f9f9f9;
+}
+
+#xsheetTable tr.highlighted-frame td {
+    background-color: var(--highlight-color) !important;
+}
+
+#xsheetTable tr.major-second-tick {
+    border-bottom: 2px solid #777;
+}
+
+#xsheetTable tr.eighth-frame-tick {
+    border-bottom: 1px dashed #bbb;
+}
+
+#xsheetTable td.frame-col.major-second-tick,
+#xsheetTable tr.bold-frame-row td.frame-col {
+    font-weight: bold;
+}
+
+#xsheetTable tr:first-child td.frame-col {
+    background-color: #c8e6c9;
+}
+
+/* Light green for first frame numbers */
+
+
+#xsheetTable td[contenteditable="true"] {
+    white-space: pre-wrap;
+    min-height: var(--row-height);
+}
+
+/* Allow wrapping */
+#xsheetTable td[contenteditable="true"]:focus {
+    outline: 1px solid blue;
+    background-color: #e6f7ff;
+}
+
+#xsheetTable td[contenteditable="true"]:empty:before {
+    content: attr(data-placeholder);
+    color: #aaa;
+    font-style: italic;
+}
+
+/* Overlays */
+#verticalWaveformCanvas {
+    position: absolute;
+    pointer-events: auto;
+    z-index: 5;
+    /* Above cell background, below text potentially */
+}
+
+#drawingCanvasOverlay {
+    position: absolute;
+    pointer-events: none;
+    /* Managed by drawing tool state */
+    z-index: 20;
+    /* Above waveform and table content */
+}
+
+.app-footer {
+    padding: 5px 10px;
+    background-color: #e0e0e0;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--footer-height);
+    flex-shrink: 0;
+    font-size: var(--font-size-small);
+}
+
+#audio-playback-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-grow: 1;
+}
+
+#audioInfo {
+    margin: 0 10px;
+    white-space: nowrap;
+}
+
+#audioScrubSlider {
+    flex-grow: 1;
+    min-width: 100px;
+    max-width: 300px;
+    margin: 0 5px;
+}
+
+#statusBar {
+    text-align: right;
+    min-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Print styles */
+@media print {
+
+    .app-header,
+    #left-toolbar,
+    .app-footer,
+    #drawingCanvasOverlay,
+    #verticalWaveformCanvas {
+        display: none !important;
+    }
+
+    body,
+    html {
+        height: auto;
+        overflow: visible;
+        font-size: 8pt;
+        background-color: #fff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    .app-container,
+    .main-content-area,
+    #xsheet-and-metadata-section,
+    #xsheet-container {
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    #printable-area {
+        max-width: 100% !important;
+        border: none !important;
+    }
+
+    #metadata-grid input {
+        border: none !important;
+    }
+
+    #xsheetTable thead {
+        display: table-header-group;
+    }
+
+    /* Repeat headers */
+    #xsheetTable tr,
+    #xsheetTable td {
+        page-break-inside: avoid;
+    }
+
+    .waveform-col canvas.cell-waveform-for-print {
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    @page {
+        size: letter portrait;
+        margin: 0.4in;
+    }
+}
