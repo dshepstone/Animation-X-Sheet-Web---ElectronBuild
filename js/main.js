@@ -1,15 +1,29 @@
 // js/main.js
 document.addEventListener('DOMContentLoaded', () => {
     console.log("main.js: DOMContentLoaded event fired.");
-    if (typeof ProjectData === 'undefined') { console.error("ProjectData class is not defined! Check script order in HTML."); return; }
-    if (typeof AudioHandler === 'undefined') { console.error("AudioHandler class is not defined! Check script order in HTML."); return; }
-    if (typeof XSheet === 'undefined') { console.error("XSheet class is not defined! Check script order in HTML."); return; }
+    if (typeof ProjectData === 'undefined') { console.error("ProjectData class is not defined! Check script order."); return; }
+    if (typeof AudioHandler === 'undefined') { console.error("AudioHandler class is not defined! Check script order."); return; }
+    if (typeof XSheet === 'undefined') { console.error("XSheet class is not defined! Check script order."); return; }
+    if (typeof window.XSheetApp?.DrawingTools === 'undefined') { console.error("XSheetApp.DrawingTools is not defined! Check drawingTools.js."); return; }
+    if (typeof window.XSheetApp?.DrawingCanvas === 'undefined') { console.error("XSheetApp.DrawingCanvas is not defined! Check drawingCanvas.js."); return; }
 
     const projectData = new ProjectData();
     const audioHandler = new AudioHandler(projectData);
     const xsheet = new XSheet(projectData, audioHandler);
 
-    const elements = {
+    // --- Initialize Drawing Subsystem ---
+    const drawingTools = window.XSheetApp.DrawingTools;
+    const leftToolbarEl = document.getElementById('left-toolbar');
+    if (leftToolbarEl) drawingTools.init(projectData, leftToolbarEl);
+    else console.error("main.js: Left toolbar ('left-toolbar') not found for DrawingTools.");
+
+    const drawingCanvasModule = window.XSheetApp.DrawingCanvas;
+    const xsheetContainerEl = document.getElementById('xsheet-container');
+    if (xsheetContainerEl) drawingCanvasModule.init(projectData, xsheetContainerEl, drawingTools);
+    else console.error("main.js: XSheet container ('xsheet-container') not found for DrawingCanvas.");
+    // --- End Drawing Subsystem Init ---
+
+    const elements = { /* ... (same element caching as previous main.js) ... */
         btnImportAudio: document.getElementById('btnImportAudio'), fileInputAudio: document.getElementById('fileInputAudio'),
         btnPlay: document.getElementById('btnPlay'), btnPause: document.getElementById('btnPause'), btnStop: document.getElementById('btnStop'),
         framesInput: document.getElementById('framesInput'), fpsInput: document.getElementById('fpsInput'),
@@ -18,13 +32,21 @@ document.addEventListener('DOMContentLoaded', () => {
         metaPageNumber: document.getElementById('metaPageNumber'), metaAnimatorName: document.getElementById('metaAnimatorName'),
         metaVersionNumber: document.getElementById('metaVersionNumber'), metaShotNumber: document.getElementById('metaShotNumber'),
         statusBar: document.getElementById('statusBar'),
+        btnClearAllDrawings: document.getElementById('btnClearAllDrawings'),
     };
     let isSliderDragging = false;
 
-    if (xsheet?.render) { xsheet.render(); } else { console.error("main.js: xsheet.render not available!"); }
+    if (xsheet?.render) xsheet.render(); else console.error("main.js: xsheet.render not available!");
     updateFramesInput(); updateFpsInput(); updateAudioInfo(); updateAudioScrubSlider(); updatePlaybackButtonsUI(false);
     if (elements.metaDate) elements.metaDate.valueAsDate = new Date(); updateStatus("Ready");
 
+    // --- Event Listeners for UI Controls ---
+    elements.btnClearAllDrawings?.addEventListener('click', () => {
+        if (confirm("Clear all drawings on the current active layer?")) {
+            projectData.clearAllDrawings(); // This dispatches 'drawingChanged'
+        }
+    });
+    // ... (Rest of event listeners from previous full main.js, like btnImportAudio, btnPlay, etc.) ...
     elements.btnImportAudio?.addEventListener('click', () => elements.fileInputAudio?.click());
     elements.fileInputAudio?.addEventListener('change', async (e) => {
         const file = e.target.files[0]; if (file) await audioHandler.loadAudioFile(file); e.target.value = null;
@@ -73,9 +95,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.addEventListener('projectDataChanged', (e) => {
+    // --- Custom Event Listeners ---
+    document.addEventListener('projectDataChanged', (e) => { /* ... same as previous ... */
         const reason = e.detail?.reason;
-        // console.log(`main.js: 'projectDataChanged' event, reason: ${reason}`);
         if (xsheet?.render && (reason === 'frameCount' || reason === 'newProject' || reason === 'projectLoaded' || reason === 'audioCleared')) {
             xsheet.render();
         }
@@ -84,15 +106,15 @@ document.addEventListener('DOMContentLoaded', () => {
             xsheet.renderVerticalWaveform();
         }
     });
-    document.addEventListener('audioLoaded', (e) => {
+    document.addEventListener('audioLoaded', (e) => { /* ... same as previous ... */
         updateAudioInfo(); updateAudioScrubSlider(); updatePlaybackButtonsUI(false);
         if (xsheet?.renderVerticalWaveform) xsheet.renderVerticalWaveform();
     });
-    document.addEventListener('playbackStateChanged', (e) => {
+    document.addEventListener('playbackStateChanged', (e) => { /* ... same as before ... */
         const isPlaying = e.detail.isPlaying; updatePlaybackButtonsUI(isPlaying);
         if (isPlaying) requestAnimationFrame(animationLoopForPlayback);
     });
-    document.addEventListener('playbackPositionChanged', (e) => {
+    document.addEventListener('playbackPositionChanged', (e) => { /* ... same as before ... */
         const position = e.detail.position; projectData.audio.currentTime = position;
         updateAudioInfo();
         if (!isSliderDragging && elements.audioScrubSlider) {
@@ -102,9 +124,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (xsheet?.highlightFrame) xsheet.highlightFrame(Math.floor(position * projectData.metadata.fps));
     });
 
+    // --- UI Update Functions ---
+    // ... (updateFramesInput, updateFpsInput, updateAudioInfo, updateAudioScrubSlider, 
+    //      updatePlaybackButtonsUI, animationLoopForPlayback, updateStatus
+    //      are the same as the previous complete main.js listing)
     function updateFramesInput() { if (elements.framesInput) elements.framesInput.value = projectData.frameCount; }
     function updateFpsInput() { if (elements.fpsInput) elements.fpsInput.value = projectData.metadata.fps; }
-    function updateAudioInfo() { /* ... same as before ... */
+    function updateAudioInfo() {
         if (!elements.audioInfoEl) return;
         if (projectData.audio.fileName && projectData.audio.duration > 0) {
             const currentTime = projectData.audio.currentTime !== undefined ? projectData.audio.currentTime : 0;
@@ -112,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.audioInfoEl.textContent = `${projectData.audio.fileName} (${currentTime.toFixed(2)}s / ${duration.toFixed(2)}s)`;
         } else { elements.audioInfoEl.textContent = "No audio loaded"; }
     }
-    function updateAudioScrubSlider() { /* ... same as before ... */
+    function updateAudioScrubSlider() {
         if (!elements.audioScrubSlider) return;
         if (projectData.audio.audioBuffer && projectData.audio.duration > 0) {
             elements.audioScrubSlider.disabled = false;
@@ -120,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.audioScrubSlider.value = projectData.audio.duration > 0 ? (currentTime / projectData.audio.duration) * 1000 : 0;
         } else { elements.audioScrubSlider.disabled = true; elements.audioScrubSlider.value = 0; }
     }
-    function updatePlaybackButtonsUI(isPlaying) { /* ... same as before ... */
+    function updatePlaybackButtonsUI(isPlaying) {
         const hasAudio = projectData.audio.audioBuffer && projectData.audio.duration > 0;
         if (elements.btnPlay) { elements.btnPlay.textContent = isPlaying ? 'Pause' : 'Play'; elements.btnPlay.disabled = !hasAudio; }
         if (elements.btnPause) { elements.btnPause.style.display = 'none'; }
@@ -136,5 +162,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function updateStatus(message) { if (elements.statusBar) elements.statusBar.textContent = "Status: " + message; }
 
-    console.log("Main app setup complete.");
+    console.log("Main app setup complete. Initial UI should be rendered.");
 });
