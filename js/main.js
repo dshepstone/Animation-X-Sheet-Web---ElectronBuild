@@ -1,29 +1,47 @@
 // js/main.js
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("main.js: DOMContentLoaded event fired.");
+    // console.log("main.js: DOMContentLoaded event fired.");
     if (typeof ProjectData === 'undefined') { console.error("ProjectData class is not defined! Check script order."); return; }
     if (typeof AudioHandler === 'undefined') { console.error("AudioHandler class is not defined! Check script order."); return; }
     if (typeof XSheet === 'undefined') { console.error("XSheet class is not defined! Check script order."); return; }
-    if (typeof window.XSheetApp?.DrawingTools === 'undefined') { console.error("XSheetApp.DrawingTools is not defined! Check drawingTools.js."); return; }
-    if (typeof window.XSheetApp?.DrawingCanvas === 'undefined') { console.error("XSheetApp.DrawingCanvas is not defined! Check drawingCanvas.js."); return; }
+
+    window.XSheetApp = window.XSheetApp || {};
+
+    const statusBarEl = document.getElementById('statusBar');
+    window.XSheetApp.updateStatus = function (message) {
+        if (statusBarEl) statusBarEl.textContent = "Status: " + message;
+        console.log("Status: " + message);
+    };
+
+    if (typeof window.XSheetApp?.DrawingTools === 'undefined') { console.warn("XSheetApp.DrawingTools not defined! (Placeholders expected)"); }
+    if (typeof window.XSheetApp?.DrawingCanvas === 'undefined') { console.warn("XSheetApp.DrawingCanvas not defined! (Placeholders expected)"); }
+    // Check for ExportPrintHandler (new name)
+    if (typeof window.XSheetApp?.ExportPrintHandler === 'undefined') { console.error("XSheetApp.ExportPrintHandler not defined! Check exportPrintHandler.js."); return; }
+
 
     const projectData = new ProjectData();
     const audioHandler = new AudioHandler(projectData);
     const xsheet = new XSheet(projectData, audioHandler);
 
-    // --- Initialize Drawing Subsystem ---
-    const drawingTools = window.XSheetApp.DrawingTools;
-    const leftToolbarEl = document.getElementById('left-toolbar');
-    if (leftToolbarEl) drawingTools.init(projectData, leftToolbarEl);
-    else console.error("main.js: Left toolbar ('left-toolbar') not found for DrawingTools.");
+    if (window.XSheetApp.DrawingTools) {
+        const drawingTools = window.XSheetApp.DrawingTools;
+        const leftToolbarEl = document.getElementById('left-toolbar');
+        if (leftToolbarEl) drawingTools.init(projectData, leftToolbarEl);
+        else console.error("main.js: Left toolbar ('left-toolbar') not found for DrawingTools.");
 
-    const drawingCanvasModule = window.XSheetApp.DrawingCanvas;
-    const xsheetContainerEl = document.getElementById('xsheet-container');
-    if (xsheetContainerEl) drawingCanvasModule.init(projectData, xsheetContainerEl, drawingTools);
-    else console.error("main.js: XSheet container ('xsheet-container') not found for DrawingCanvas.");
-    // --- End Drawing Subsystem Init ---
+        if (window.XSheetApp.DrawingCanvas) {
+            const drawingCanvasModule = window.XSheetApp.DrawingCanvas;
+            const xsheetContainerElForDrawing = document.getElementById('xsheet-container');
+            if (xsheetContainerElForDrawing) drawingCanvasModule.init(projectData, xsheetContainerElForDrawing, drawingTools);
+            else console.error("main.js: XSheet container ('xsheet-container') not found for DrawingCanvas.");
+        }
+    }
 
-    const elements = { /* ... (same element caching as previous main.js) ... */
+    // Initialize ExportPrintHandler
+    const exportPrintHandler = window.XSheetApp.ExportPrintHandler;
+    exportPrintHandler.init(projectData, xsheet);
+
+    const elements = {
         btnImportAudio: document.getElementById('btnImportAudio'), fileInputAudio: document.getElementById('fileInputAudio'),
         btnPlay: document.getElementById('btnPlay'), btnPause: document.getElementById('btnPause'), btnStop: document.getElementById('btnStop'),
         framesInput: document.getElementById('framesInput'), fpsInput: document.getElementById('fpsInput'),
@@ -31,22 +49,31 @@ document.addEventListener('DOMContentLoaded', () => {
         metaProjectNumber: document.getElementById('metaProjectNumber'), metaDate: document.getElementById('metaDate'),
         metaPageNumber: document.getElementById('metaPageNumber'), metaAnimatorName: document.getElementById('metaAnimatorName'),
         metaVersionNumber: document.getElementById('metaVersionNumber'), metaShotNumber: document.getElementById('metaShotNumber'),
-        statusBar: document.getElementById('statusBar'),
         btnClearAllDrawings: document.getElementById('btnClearAllDrawings'),
+        btnPrint: document.getElementById('btnPrint'), // Added
+        btnExportPDF: document.getElementById('btnExportPDF'), // Added
     };
     let isSliderDragging = false;
 
     if (xsheet?.render) xsheet.render(); else console.error("main.js: xsheet.render not available!");
     updateFramesInput(); updateFpsInput(); updateAudioInfo(); updateAudioScrubSlider(); updatePlaybackButtonsUI(false);
-    if (elements.metaDate) elements.metaDate.valueAsDate = new Date(); updateStatus("Ready");
+    if (elements.metaDate) elements.metaDate.valueAsDate = new Date();
+    window.XSheetApp.updateStatus("Ready");
+
 
     // --- Event Listeners for UI Controls ---
     elements.btnClearAllDrawings?.addEventListener('click', () => {
-        if (confirm("Clear all drawings on the current active layer?")) {
-            projectData.clearAllDrawings(); // This dispatches 'drawingChanged'
-        }
+        if (confirm("Clear all drawings on all layers?")) { projectData.clearAllDrawings(); }
     });
-    // ... (Rest of event listeners from previous full main.js, like btnImportAudio, btnPlay, etc.) ...
+    elements.btnPrint?.addEventListener('click', () => {
+        exportPrintHandler.print(); // Use the handler's method
+    });
+    elements.btnExportPDF?.addEventListener('click', async () => {
+        // Status updates handled within exportPDF itself
+        await exportPrintHandler.exportPDF();
+    });
+
+    // ... (Rest of event listeners for btnImportAudio, btnPlay, etc. from the previous full main.js)
     elements.btnImportAudio?.addEventListener('click', () => elements.fileInputAudio?.click());
     elements.fileInputAudio?.addEventListener('change', async (e) => {
         const file = e.target.files[0]; if (file) await audioHandler.loadAudioFile(file); e.target.value = null;
@@ -68,7 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.fpsInput?.addEventListener('change', (e) => {
         const newFps = parseInt(e.target.value);
         if (!isNaN(newFps) && newFps > 0 && projectData.metadata.fps !== newFps) {
-            projectData.metadata.fps = newFps; projectData.isModified = true; updateStatus(`FPS set to ${newFps}`);
+            projectData.metadata.fps = newFps; projectData.isModified = true; window.XSheetApp.updateStatus(`FPS set to ${newFps}`);
             if (projectData.audio.duration > 0) {
                 const requiredFrames = Math.ceil(projectData.audio.duration * newFps);
                 if (requiredFrames > projectData.frameCount) {
@@ -96,7 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Custom Event Listeners ---
-    document.addEventListener('projectDataChanged', (e) => { /* ... same as previous ... */
+    // ... (projectDataChanged, audioLoaded, playbackStateChanged, playbackPositionChanged same as before)
+    document.addEventListener('projectDataChanged', (e) => {
         const reason = e.detail?.reason;
         if (xsheet?.render && (reason === 'frameCount' || reason === 'newProject' || reason === 'projectLoaded' || reason === 'audioCleared')) {
             xsheet.render();
@@ -106,15 +134,15 @@ document.addEventListener('DOMContentLoaded', () => {
             xsheet.renderVerticalWaveform();
         }
     });
-    document.addEventListener('audioLoaded', (e) => { /* ... same as previous ... */
+    document.addEventListener('audioLoaded', (e) => {
         updateAudioInfo(); updateAudioScrubSlider(); updatePlaybackButtonsUI(false);
         if (xsheet?.renderVerticalWaveform) xsheet.renderVerticalWaveform();
     });
-    document.addEventListener('playbackStateChanged', (e) => { /* ... same as before ... */
+    document.addEventListener('playbackStateChanged', (e) => {
         const isPlaying = e.detail.isPlaying; updatePlaybackButtonsUI(isPlaying);
         if (isPlaying) requestAnimationFrame(animationLoopForPlayback);
     });
-    document.addEventListener('playbackPositionChanged', (e) => { /* ... same as before ... */
+    document.addEventListener('playbackPositionChanged', (e) => {
         const position = e.detail.position; projectData.audio.currentTime = position;
         updateAudioInfo();
         if (!isSliderDragging && elements.audioScrubSlider) {
@@ -126,8 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI Update Functions ---
     // ... (updateFramesInput, updateFpsInput, updateAudioInfo, updateAudioScrubSlider, 
-    //      updatePlaybackButtonsUI, animationLoopForPlayback, updateStatus
-    //      are the same as the previous complete main.js listing)
+    //      updatePlaybackButtonsUI, animationLoopForPlayback same as before. `updateStatus` is now global)
     function updateFramesInput() { if (elements.framesInput) elements.framesInput.value = projectData.frameCount; }
     function updateFpsInput() { if (elements.fpsInput) elements.fpsInput.value = projectData.metadata.fps; }
     function updateAudioInfo() {
@@ -160,7 +187,6 @@ document.addEventListener('DOMContentLoaded', () => {
             requestAnimationFrame(animationLoopForPlayback);
         }
     }
-    function updateStatus(message) { if (elements.statusBar) elements.statusBar.textContent = "Status: " + message; }
 
-    console.log("Main app setup complete. Initial UI should be rendered.");
+    console.log("Main app setup complete.");
 });
