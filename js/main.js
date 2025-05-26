@@ -1,45 +1,13 @@
 // js/main.js
 document.addEventListener('DOMContentLoaded', () => {
-    // console.log("main.js: DOMContentLoaded event fired.");
-    if (typeof ProjectData === 'undefined') { console.error("ProjectData class is not defined! Check script order."); return; }
-    if (typeof AudioHandler === 'undefined') { console.error("AudioHandler class is not defined! Check script order."); return; }
-    if (typeof XSheet === 'undefined') { console.error("XSheet class is not defined! Check script order."); return; }
-
-    window.XSheetApp = window.XSheetApp || {};
-
-    const statusBarEl = document.getElementById('statusBar');
-    window.XSheetApp.updateStatus = function (message) {
-        if (statusBarEl) statusBarEl.textContent = "Status: " + message;
-        console.log("Status: " + message);
-    };
-
-    if (typeof window.XSheetApp?.DrawingTools === 'undefined') { console.warn("XSheetApp.DrawingTools not defined! (Placeholders expected)"); }
-    if (typeof window.XSheetApp?.DrawingCanvas === 'undefined') { console.warn("XSheetApp.DrawingCanvas not defined! (Placeholders expected)"); }
-    // Check for ExportPrintHandler (new name)
-    if (typeof window.XSheetApp?.ExportPrintHandler === 'undefined') { console.error("XSheetApp.ExportPrintHandler not defined! Check exportPrintHandler.js."); return; }
-
+    console.log("main.js: DOMContentLoaded event fired.");
+    if (typeof ProjectData === 'undefined') { console.error("ProjectData class is not defined! Check script order in HTML."); return; }
+    if (typeof AudioHandler === 'undefined') { console.error("AudioHandler class is not defined! Check script order in HTML."); return; }
+    if (typeof XSheet === 'undefined') { console.error("XSheet class is not defined! Check script order in HTML."); return; }
 
     const projectData = new ProjectData();
     const audioHandler = new AudioHandler(projectData);
     const xsheet = new XSheet(projectData, audioHandler);
-
-    if (window.XSheetApp.DrawingTools) {
-        const drawingTools = window.XSheetApp.DrawingTools;
-        const leftToolbarEl = document.getElementById('left-toolbar');
-        if (leftToolbarEl) drawingTools.init(projectData, leftToolbarEl);
-        else console.error("main.js: Left toolbar ('left-toolbar') not found for DrawingTools.");
-
-        if (window.XSheetApp.DrawingCanvas) {
-            const drawingCanvasModule = window.XSheetApp.DrawingCanvas;
-            const xsheetContainerElForDrawing = document.getElementById('xsheet-container');
-            if (xsheetContainerElForDrawing) drawingCanvasModule.init(projectData, xsheetContainerElForDrawing, drawingTools);
-            else console.error("main.js: XSheet container ('xsheet-container') not found for DrawingCanvas.");
-        }
-    }
-
-    // Initialize ExportPrintHandler
-    const exportPrintHandler = window.XSheetApp.ExportPrintHandler;
-    exportPrintHandler.init(projectData, xsheet);
 
     const elements = {
         btnImportAudio: document.getElementById('btnImportAudio'), fileInputAudio: document.getElementById('fileInputAudio'),
@@ -49,31 +17,28 @@ document.addEventListener('DOMContentLoaded', () => {
         metaProjectNumber: document.getElementById('metaProjectNumber'), metaDate: document.getElementById('metaDate'),
         metaPageNumber: document.getElementById('metaPageNumber'), metaAnimatorName: document.getElementById('metaAnimatorName'),
         metaVersionNumber: document.getElementById('metaVersionNumber'), metaShotNumber: document.getElementById('metaShotNumber'),
-        btnClearAllDrawings: document.getElementById('btnClearAllDrawings'),
-        btnPrint: document.getElementById('btnPrint'), // Added
-        btnExportPDF: document.getElementById('btnExportPDF'), // Added
+        statusBar: document.getElementById('statusBar'),
     };
     let isSliderDragging = false;
 
-    if (xsheet?.render) xsheet.render(); else console.error("main.js: xsheet.render not available!");
+    // Initialize drawing tools and canvas
+    if (window.XSheetApp.DrawingTools) {
+        window.XSheetApp.DrawingTools.init(projectData, document.getElementById('left-toolbar'));
+    }
+
+    if (window.XSheetApp.DrawingCanvas) {
+        window.XSheetApp.DrawingCanvas.init(projectData, document.getElementById('xsheet-container'), window.XSheetApp.DrawingTools);
+    }
+
+    // Initialize export handler
+    if (window.XSheetApp.ExportHandler) {
+        window.XSheetApp.ExportHandler.init(projectData, xsheet, window.XSheetApp.DrawingCanvas);
+    }
+
+    if (xsheet?.render) { xsheet.render(); } else { console.error("main.js: xsheet.render not available!"); }
     updateFramesInput(); updateFpsInput(); updateAudioInfo(); updateAudioScrubSlider(); updatePlaybackButtonsUI(false);
-    if (elements.metaDate) elements.metaDate.valueAsDate = new Date();
-    window.XSheetApp.updateStatus("Ready");
+    if (elements.metaDate) elements.metaDate.valueAsDate = new Date(); updateStatus("Ready");
 
-
-    // --- Event Listeners for UI Controls ---
-    elements.btnClearAllDrawings?.addEventListener('click', () => {
-        if (confirm("Clear all drawings on all layers?")) { projectData.clearAllDrawings(); }
-    });
-    elements.btnPrint?.addEventListener('click', () => {
-        exportPrintHandler.print(); // Use the handler's method
-    });
-    elements.btnExportPDF?.addEventListener('click', async () => {
-        // Status updates handled within exportPDF itself
-        await exportPrintHandler.exportPDF();
-    });
-
-    // ... (Rest of event listeners for btnImportAudio, btnPlay, etc. from the previous full main.js)
     elements.btnImportAudio?.addEventListener('click', () => elements.fileInputAudio?.click());
     elements.fileInputAudio?.addEventListener('change', async (e) => {
         const file = e.target.files[0]; if (file) await audioHandler.loadAudioFile(file); e.target.value = null;
@@ -95,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.fpsInput?.addEventListener('change', (e) => {
         const newFps = parseInt(e.target.value);
         if (!isNaN(newFps) && newFps > 0 && projectData.metadata.fps !== newFps) {
-            projectData.metadata.fps = newFps; projectData.isModified = true; window.XSheetApp.updateStatus(`FPS set to ${newFps}`);
+            projectData.metadata.fps = newFps; projectData.isModified = true; updateStatus(`FPS set to ${newFps}`);
             if (projectData.audio.duration > 0) {
                 const requiredFrames = Math.ceil(projectData.audio.duration * newFps);
                 if (requiredFrames > projectData.frameCount) {
@@ -122,10 +87,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Custom Event Listeners ---
-    // ... (projectDataChanged, audioLoaded, playbackStateChanged, playbackPositionChanged same as before)
     document.addEventListener('projectDataChanged', (e) => {
         const reason = e.detail?.reason;
+        // console.log(`main.js: 'projectDataChanged' event, reason: ${reason}`);
         if (xsheet?.render && (reason === 'frameCount' || reason === 'newProject' || reason === 'projectLoaded' || reason === 'audioCleared')) {
             xsheet.render();
         }
@@ -152,12 +116,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (xsheet?.highlightFrame) xsheet.highlightFrame(Math.floor(position * projectData.metadata.fps));
     });
 
-    // --- UI Update Functions ---
-    // ... (updateFramesInput, updateFpsInput, updateAudioInfo, updateAudioScrubSlider, 
-    //      updatePlaybackButtonsUI, animationLoopForPlayback same as before. `updateStatus` is now global)
     function updateFramesInput() { if (elements.framesInput) elements.framesInput.value = projectData.frameCount; }
     function updateFpsInput() { if (elements.fpsInput) elements.fpsInput.value = projectData.metadata.fps; }
-    function updateAudioInfo() {
+    function updateAudioInfo() { /* ... same as before ... */
         if (!elements.audioInfoEl) return;
         if (projectData.audio.fileName && projectData.audio.duration > 0) {
             const currentTime = projectData.audio.currentTime !== undefined ? projectData.audio.currentTime : 0;
@@ -165,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.audioInfoEl.textContent = `${projectData.audio.fileName} (${currentTime.toFixed(2)}s / ${duration.toFixed(2)}s)`;
         } else { elements.audioInfoEl.textContent = "No audio loaded"; }
     }
-    function updateAudioScrubSlider() {
+    function updateAudioScrubSlider() { /* ... same as before ... */
         if (!elements.audioScrubSlider) return;
         if (projectData.audio.audioBuffer && projectData.audio.duration > 0) {
             elements.audioScrubSlider.disabled = false;
@@ -173,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.audioScrubSlider.value = projectData.audio.duration > 0 ? (currentTime / projectData.audio.duration) * 1000 : 0;
         } else { elements.audioScrubSlider.disabled = true; elements.audioScrubSlider.value = 0; }
     }
-    function updatePlaybackButtonsUI(isPlaying) {
+    function updatePlaybackButtonsUI(isPlaying) { /* ... same as before ... */
         const hasAudio = projectData.audio.audioBuffer && projectData.audio.duration > 0;
         if (elements.btnPlay) { elements.btnPlay.textContent = isPlaying ? 'Pause' : 'Play'; elements.btnPlay.disabled = !hasAudio; }
         if (elements.btnPause) { elements.btnPause.style.display = 'none'; }
@@ -187,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
             requestAnimationFrame(animationLoopForPlayback);
         }
     }
+    function updateStatus(message) { if (elements.statusBar) elements.statusBar.textContent = "Status: " + message; }
 
     console.log("Main app setup complete.");
 });
