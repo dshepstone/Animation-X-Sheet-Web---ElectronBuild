@@ -12,40 +12,53 @@ window.XSheetApp = window.XSheetApp || {};
     let isDrawing = false;
     let isExportPrepared = false;
     let originalCanvasState = {};
+    let activePointerId = null;
 
-    // This will be assigned by the H-Lock IIFE later
     let _hLock_syncScrollTransforms = function () { };
 
     function _getCanvasAndContainer() {
         if (!xsheetContainer) {
-            console.error("DrawingCanvas: xsheetContainer not set!");
-            return { canvas: null, ctx: null, xsheetContainer: null };
+            // console.error("DrawingCanvas: xsheetContainer not set on first call to _getCanvasAndContainer!");
+            // This might be called early by _setCanvasStyleForScreen if toolsRef is not ready
         }
         if (!canvas) {
             canvas = document.getElementById("drawingCanvasOverlay");
             if (!canvas) {
-                canvas = document.createElement("canvas"); canvas.id = "drawingCanvasOverlay";
-                canvas.style.position = "absolute"; canvas.style.pointerEvents = "none";
-                canvas.style.zIndex = "20";
-                xsheetContainer.appendChild(canvas); ctx = canvas.getContext("2d");
-            } else { ctx = canvas.getContext("2d"); }
+                if (xsheetContainer) { // Only create if container exists
+                    canvas = document.createElement("canvas"); canvas.id = "drawingCanvasOverlay";
+                    canvas.style.position = "absolute"; canvas.style.pointerEvents = "none";
+                    canvas.style.zIndex = "20";
+                    xsheetContainer.appendChild(canvas);
+                    ctx = canvas.getContext("2d");
+                } else {
+                    // console.error("DrawingCanvas: Cannot create canvas, xsheetContainer not available yet.");
+                    return { canvas: null, ctx: null, xsheetContainer: null };
+                }
+            } else {
+                ctx = canvas.getContext("2d");
+            }
         }
         return { canvas, ctx, xsheetContainer };
     }
 
     function _setCanvasStyleForScreen() {
         const elements = _getCanvasAndContainer();
-        if (!elements.canvas || !elements.xsheetContainer) return;
+        if (!elements.canvas || !elements.xsheetContainer) return; // Exit if canvas/container not ready
         const { canvas: currentCanvas, xsheetContainer: currentXSheetContainer } = elements;
 
-        const scrollX = currentXSheetContainer.scrollLeft; // Needed for H-Lock
         const scrollY = currentXSheetContainer.scrollTop;
 
         currentCanvas.style.position = "absolute";
-        currentCanvas.style.left = `0px`; // H-Lock will apply translateX based on scrollX
-        currentCanvas.style.top = `${scrollY}px`; // Pins canvas top to viewport top
+        currentCanvas.style.left = `0px`;
+        currentCanvas.style.top = `${scrollY}px`;
         currentCanvas.style.zIndex = "20";
-        currentCanvas.style.pointerEvents = (toolsRef && toolsRef.getActiveTool() === "select") ? "none" : "auto";
+
+        let currentToolName = "select";
+        if (toolsRef && typeof toolsRef.getActiveTool === 'function') {
+            currentToolName = toolsRef.getActiveTool();
+        }
+        currentCanvas.style.pointerEvents = (currentToolName === "select") ? "none" : "auto";
+        currentCanvas.style.cursor = (currentToolName === "select") ? 'default' : 'crosshair';
 
         const clientWidth = currentXSheetContainer.clientWidth;
         const clientHeight = currentXSheetContainer.clientHeight;
@@ -56,7 +69,7 @@ window.XSheetApp = window.XSheetApp || {};
         currentCanvas.style.height = clientHeight + "px";
 
         if (typeof _hLock_syncScrollTransforms === 'function') {
-            _hLock_syncScrollTransforms(); // Call H-Lock to apply translateX
+            _hLock_syncScrollTransforms();
         }
     }
 
@@ -70,22 +83,36 @@ window.XSheetApp = window.XSheetApp || {};
         };
     }
 
-    // Original _drawObject that translates coordinates for screen drawing
-    function _drawObject_screen(objToDraw, drawingContext) {
-        if (!objToDraw?.points?.length || !drawingContext) return;
-        const { xsheetContainer: currentXSheetContainer } = _getCanvasAndContainer();
-        const scrollX = currentXSheetContainer?.scrollLeft || 0;
-        const scrollY = currentXSheetContainer?.scrollTop || 0;
+    function _drawObject(objToDraw, drawingContext, isForExport) {
+        if (!objToDraw?.style || !objToDraw.points || !drawingContext) return;
+        // Allow drawing shapes even with only one point during drag (for preview)
+        if (objToDraw.points.length === 0 && (objToDraw.tool === 'pen' || objToDraw.tool === 'line')) return;
+        if (objToDraw.points.length < 1 && (objToDraw.tool === 'rectangle' || objToDraw.tool === 'ellipse')) return;
+
 
         drawingContext.save();
-        drawingContext.translate(-scrollX, -scrollY); // Apply scroll offset for screen drawing
+
+        if (!isForExport) {
+            const { xsheetContainer: currentXSheetContainer } = _getCanvasAndContainer();
+            const scrollX = currentXSheetContainer?.scrollLeft || 0;
+            const scrollY = currentXSheetContainer?.scrollTop || 0;
+            drawingContext.translate(-scrollX, -scrollY);
+        }
 
         drawingContext.strokeStyle = objToDraw.style.color;
         drawingContext.lineWidth = objToDraw.style.width;
-        drawingContext.lineCap = "round"; drawingContext.lineJoin = "round";
+        drawingContext.lineCap = "round";
+        drawingContext.lineJoin = "round";
+
         drawingContext.beginPath();
+
         const firstPoint = objToDraw.points[0];
-        drawingContext.moveTo(firstPoint.x, firstPoint.y);
+        // For pen and line, we need moveTo. For rect/ellipse, their methods handle path creation.
+        if (objToDraw.tool === "pen" || objToDraw.tool === "line") {
+            if (!firstPoint) { drawingContext.restore(); return; } // Should have points
+            drawingContext.moveTo(firstPoint.x, firstPoint.y);
+        }
+
         if (objToDraw.tool === "pen") {
             for (let i = 1; i < objToDraw.points.length; i++) drawingContext.lineTo(objToDraw.points[i].x, objToDraw.points[i].y);
         } else if (objToDraw.tool === "line" && objToDraw.points.length >= 2) {
@@ -95,35 +122,19 @@ window.XSheetApp = window.XSheetApp || {};
             drawingContext.rect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
         } else if (objToDraw.tool === "ellipse" && objToDraw.points.length >= 2) {
             const p0 = objToDraw.points[0]; const p1 = objToDraw.points[1];
-            drawingContext.ellipse((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, Math.abs(p1.x - p0.x) / 2, Math.abs(p1.y - p0.y) / 2, 0, 0, Math.PI * 2);
+            if (p0 && p1) {
+                drawingContext.ellipse(
+                    (p0.x + p1.x) / 2,
+                    (p0.y + p1.y) / 2,
+                    Math.abs(p1.x - p0.x) / 2,
+                    Math.abs(p1.y - p0.y) / 2,
+                    0, 0, Math.PI * 2
+                );
+            }
         }
         drawingContext.stroke();
         drawingContext.restore();
     }
-
-    // _drawObject for export (no scroll translation in context)
-    function _drawObject_export(objToDraw, drawingContext) {
-        if (!objToDraw?.points?.length || !drawingContext) return;
-        drawingContext.strokeStyle = objToDraw.style.color;
-        drawingContext.lineWidth = objToDraw.style.width;
-        drawingContext.lineCap = "round"; drawingContext.lineJoin = "round";
-        drawingContext.beginPath();
-        const firstPoint = objToDraw.points[0];
-        drawingContext.moveTo(firstPoint.x, firstPoint.y);
-        if (objToDraw.tool === "pen") {
-            for (let i = 1; i < objToDraw.points.length; i++) drawingContext.lineTo(objToDraw.points[i].x, objToDraw.points[i].y);
-        } else if (objToDraw.tool === "line" && objToDraw.points.length >= 2) {
-            drawingContext.lineTo(objToDraw.points[1].x, objToDraw.points[1].y);
-        } else if (objToDraw.tool === "rectangle" && objToDraw.points.length >= 2) {
-            const p0 = objToDraw.points[0]; const p1 = objToDraw.points[1];
-            drawingContext.rect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
-        } else if (objToDraw.tool === "ellipse" && objToDraw.points.length >= 2) {
-            const p0 = objToDraw.points[0]; const p1 = objToDraw.points[1];
-            drawingContext.ellipse((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, Math.abs(p1.x - p0.x) / 2, Math.abs(p1.y - p0.y) / 2, 0, 0, Math.PI * 2);
-        }
-        drawingContext.stroke();
-    }
-
 
     function _redrawAllObjects() {
         const { canvas: currentCanvas, ctx: currentCtx } = _getCanvasAndContainer();
@@ -131,102 +142,196 @@ window.XSheetApp = window.XSheetApp || {};
 
         currentCtx.clearRect(0, 0, currentCanvas.width, currentCanvas.height);
 
-        const drawFn = isExportPrepared ? _drawObject_export : _drawObject_screen;
-
         const activeLayerIndex = projectDataRef.activeDrawingLayerIndex;
         if (projectDataRef.drawingLayers?.[activeLayerIndex]) {
             const activeLayer = projectDataRef.drawingLayers[activeLayerIndex];
             if (activeLayer.visible && activeLayer.objects) {
-                activeLayer.objects.forEach(obj => drawFn(obj, currentCtx));
+                activeLayer.objects.forEach(obj => _drawObject(obj, currentCtx, isExportPrepared));
             }
         }
-        if (currentDrawingObject) drawFn(currentDrawingObject, currentCtx);
+        if (currentDrawingObject) {
+            _drawObject(currentDrawingObject, currentCtx, isExportPrepared);
+        }
+    }
+
+    function _resetDrawingState(e) {
+        if (canvas) {
+            canvas.removeEventListener("pointermove", _onPointerMovePen);
+            canvas.removeEventListener("pointermove", _onPointerMoveDragShape);
+            if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
+                try { canvas.releasePointerCapture(activePointerId); } catch (err) { /* ignore */ }
+            }
+        }
+        isDrawing = false;
+        activePointerId = null;
+        // currentDrawingObject is handled by the calling function (_onPointerUpOrCancel or _handleToolChange)
     }
 
     function _onPointerDown(e) {
-        if (!toolsRef || !canvas) return;
-        if (e.button !== 0) return;
+        if (!toolsRef || !canvas || e.button !== 0) return;
 
-        // --- PATCHED CODE START ---
+        if (isDrawing) {
+            console.warn("PointerDown called while isDrawing was true. Resetting.");
+            // Don't commit, just reset. The previous interaction should have been finalized by its own pointerup/cancel.
+            _resetDrawingState(e);
+            currentDrawingObject = null;
+        }
+
         const tool = toolsRef.getActiveTool();
         const style = {
             color: toolsRef.getActiveColor(),
             width: toolsRef.getActiveLineWidth()
         };
-        // --- PATCHED CODE END ---
 
         if (tool === "select") return;
-        const pt = _evtToCanvasWorldSpace(e);
-        currentDrawingObject = makeObject(tool, style); // Pass the constructed tool and style
-        currentDrawingObject.points.push(pt);
+
+        activePointerId = e.pointerId;
         isDrawing = true;
-        canvas.setPointerCapture(e.pointerId);
-        e.preventDefault(); // Prevent text selection during drag
-        if (tool === "pen") canvas.addEventListener("pointermove", _onPointerMovePen);
-        else canvas.addEventListener("pointermove", _onPointerMoveDragShape);
-    }
-    function _onPointerMovePen(e) {
-        if (!isDrawing || !currentDrawingObject || !canvas.hasPointerCapture(e.pointerId)) return;
-        const pt = _evtToCanvasWorldSpace(e); currentDrawingObject.points.push(pt);
+
+        const pt = _evtToCanvasWorldSpace(e);
+        currentDrawingObject = makeObject(tool, style);
+        currentDrawingObject.points.push(pt);
+
+        try {
+            canvas.setPointerCapture(activePointerId);
+        } catch (err) {
+            console.error("Failed to set pointer capture:", err);
+            _resetDrawingState(e);
+            currentDrawingObject = null;
+            isDrawing = false;
+            return;
+        }
+        e.preventDefault();
+
+        if (tool === "pen") {
+            canvas.addEventListener("pointermove", _onPointerMovePen);
+        } else {
+            canvas.addEventListener("pointermove", _onPointerMoveDragShape);
+        }
         _redrawAllObjects();
     }
+
+    function _onPointerMovePen(e) {
+        if (!isDrawing || !currentDrawingObject || e.pointerId !== activePointerId) return;
+        const pt = _evtToCanvasWorldSpace(e);
+        currentDrawingObject.points.push(pt);
+        _redrawAllObjects();
+    }
+
     function _onPointerMoveDragShape(e) {
-        if (!isDrawing || !currentDrawingObject || !canvas.hasPointerCapture(e.pointerId)) return;
+        if (!isDrawing || !currentDrawingObject || e.pointerId !== activePointerId) return;
         const pt = _evtToCanvasWorldSpace(e);
         if (currentDrawingObject.points.length === 1) currentDrawingObject.points.push(pt);
-        else currentDrawingObject.points[1] = pt;
+        else if (currentDrawingObject.points.length >= 2) currentDrawingObject.points[1] = pt;
         _redrawAllObjects();
     }
+
     function _onPointerUpOrCancel(e) {
-        if (!isDrawing || !currentDrawingObject) {
-            if (canvas && e.pointerId && canvas.hasPointerCapture(e.pointerId)) { try { canvas.releasePointerCapture(e.pointerId); } catch (err) { } }
-            isDrawing = false; return;
-        }
-        if (canvas && canvas.hasPointerCapture(e.pointerId)) { try { canvas.releasePointerCapture(e.pointerId); } catch (err) { } }
-        isDrawing = false;
-        let objectToCommit = currentDrawingObject; currentDrawingObject = null;
-        canvas.removeEventListener("pointermove", _onPointerMovePen);
-        canvas.removeEventListener("pointermove", _onPointerMoveDragShape);
-        if (objectToCommit) { // Check if object is valid before committing
-            let isValid = true;
-            if (objectToCommit.tool === "pen" && objectToCommit.points.length < 2) isValid = false;
-            else if (objectToCommit.tool !== "pen" && objectToCommit.points.length < 2) isValid = false;
-            else if (objectToCommit.tool !== "pen" && objectToCommit.points.length >= 2) {
-                const p0 = objectToCommit.points[0]; const p1 = objectToCommit.points[objectToCommit.points.length - 1];
-                if (Math.abs(p1.x - p0.x) < 5 && Math.abs(p1.y - p0.y) < 5) isValid = false;
+        if (!isDrawing || (activePointerId !== null && e.pointerId !== activePointerId && e.type !== "pointercancel" && e.type !== "toolchange_cancel")) {
+            if (canvas && e.pointerId && canvas.hasPointerCapture(e.pointerId)) {
+                try { canvas.releasePointerCapture(e.pointerId); } catch (err) { }
             }
-            if (isValid) { projectDataRef.addDrawingObject(objectToCommit); projectDataRef.isModified = true; }
+            return;
         }
+
+        const objectToCommit = currentDrawingObject;
+
+        _resetDrawingState(e);
+
+        if (e.type !== "pointercancel" && e.type !== "toolchange_cancel" && objectToCommit) {
+            let isValid = true;
+            if (!objectToCommit.points || objectToCommit.points.length === 0) {
+                isValid = false;
+            } else if (objectToCommit.tool === "pen" && objectToCommit.points.length < 2) {
+                isValid = false;
+            } else if (objectToCommit.tool !== "pen" && objectToCommit.points.length < 2) {
+                isValid = false;
+            } else if (objectToCommit.tool !== "pen" && objectToCommit.points.length >= 2) {
+                const p0 = objectToCommit.points[0];
+                const p1 = objectToCommit.points[1];
+                if (!p0 || !p1 || (Math.abs(p1.x - p0.x) < 3 && Math.abs(p1.y - p0.y) < 3)) {
+                    isValid = false;
+                }
+            }
+
+            if (isValid) {
+                projectDataRef.addDrawingObject(objectToCommit);
+                projectDataRef.isModified = true;
+            }
+        }
+        currentDrawingObject = null;
         _redrawAllObjects();
     }
+
     function _handleToolChange(event) {
+        if (isDrawing) {
+            console.log("Tool changed during active drawing. Cancelling drawing.");
+            _onPointerUpOrCancel({ type: 'toolchange_cancel', pointerId: activePointerId }); // Simulate cancel
+            currentDrawingObject = null; // Ensure it's cleared after cancel simulation
+        }
+
         const { canvas: currentCanvas } = _getCanvasAndContainer(); if (!currentCanvas) return;
-        if (event.detail.tool === "select") { currentCanvas.style.pointerEvents = 'none'; currentCanvas.style.cursor = 'default'; }
-        else { currentCanvas.style.pointerEvents = 'auto'; currentCanvas.style.cursor = 'crosshair'; }
+        const newTool = event.detail.tool;
+        if (newTool === "select") {
+            currentCanvas.style.pointerEvents = 'none';
+            currentCanvas.style.cursor = 'default';
+        } else {
+            currentCanvas.style.pointerEvents = 'auto';
+            currentCanvas.style.cursor = 'crosshair';
+        }
     }
     function _handleDrawingDataChanged(event) { _redrawAllObjects(); }
 
 
     window.XSheetApp.DrawingCanvas = {
+        _onScrollOrResizeBound: null,
+        _onProjectDataChangedBound: null,
+
         init(projData, xsheetContainerEl, drawingToolsRefInstance) {
-            if (!projData || !xsheetContainerEl || !drawingToolsRefInstance) { console.error("DrawingCanvas init: Missing args."); return; }
-            projectDataRef = projData; xsheetContainer = xsheetContainerEl; toolsRef = drawingToolsRefInstance;
+            if (!projData || !xsheetContainerEl || !drawingToolsRefInstance) {
+                console.error("DrawingCanvas init: Missing args."); return;
+            }
+            projectDataRef = projData;
+            xsheetContainer = xsheetContainerEl;
+            toolsRef = drawingToolsRefInstance;
+
             _getCanvasAndContainer();
-            if (!canvas || !ctx) { console.error("DrawingCanvas init: Failed to ensure canvas and context."); return; }
-            _setCanvasStyleForScreen(); _redrawAllObjects();
-            xsheetContainer.addEventListener("scroll", () => { if (!isExportPrepared) { _setCanvasStyleForScreen(); _redrawAllObjects(); } });
-            window.addEventListener("resize", () => { if (!isExportPrepared) { _setCanvasStyleForScreen(); _redrawAllObjects(); } });
-            canvas.addEventListener("pointerdown", _onPointerDown);
-            window.addEventListener("pointerup", _onPointerUpOrCancel);
-            window.addEventListener("pointercancel", _onPointerUpOrCancel);
-            document.addEventListener("toolChanged", _handleToolChange); // Listens for 'toolChanged'
-            document.addEventListener("drawingChanged", _handleDrawingDataChanged);
-            document.addEventListener("projectDataChanged", (e) => {
+            if (!canvas || !ctx) {
+                console.error("DrawingCanvas init: Failed to ensure canvas and context."); return;
+            }
+
+            this._onScrollOrResizeBound = () => {
+                if (!isExportPrepared) { _setCanvasStyleForScreen(); _redrawAllObjects(); }
+            };
+            this._onProjectDataChangedBound = (e) => {
                 if (!isExportPrepared && (e.detail?.reason === 'projectLoaded' || e.detail?.reason === 'activeLayerChanged' || e.detail?.reason === 'newProject' || e.detail?.reason === 'audioCleared' || e.detail?.reason === 'frameCount')) {
                     _setCanvasStyleForScreen(); _redrawAllObjects();
                 }
-            });
+            };
+
+            xsheetContainer.removeEventListener("scroll", this._onScrollOrResizeBound);
+            window.removeEventListener("resize", this._onScrollOrResizeBound);
+            canvas.removeEventListener("pointerdown", _onPointerDown);
+            window.removeEventListener("pointerup", _onPointerUpOrCancel);
+            window.removeEventListener("pointercancel", _onPointerUpOrCancel);
+            document.removeEventListener("toolChanged", _handleToolChange);
+            document.removeEventListener("drawingChanged", _handleDrawingDataChanged);
+            document.removeEventListener("projectDataChanged", this._onProjectDataChangedBound);
+
+            xsheetContainer.addEventListener("scroll", this._onScrollOrResizeBound);
+            window.addEventListener("resize", this._onScrollOrResizeBound);
+            canvas.addEventListener("pointerdown", _onPointerDown);
+            window.addEventListener("pointerup", _onPointerUpOrCancel);
+            window.addEventListener("pointercancel", _onPointerUpOrCancel);
+            document.addEventListener("toolChanged", _handleToolChange);
+            document.addEventListener("drawingChanged", _handleDrawingDataChanged);
+            document.addEventListener("projectDataChanged", this._onProjectDataChangedBound);
+
+            _setCanvasStyleForScreen();
+            _redrawAllObjects();
+            console.log("DrawingCanvas initialized.");
         },
+
         refresh: () => _redrawAllObjects(),
 
         prepareForExport: function (isPreparing) {
@@ -249,7 +354,7 @@ window.XSheetApp = window.XSheetApp || {};
                 currentCanvas.style.position = 'absolute';
                 currentCanvas.style.top = '0px';
                 currentCanvas.style.left = '0px';
-                currentCanvas.style.transform = 'translateX(0px)';
+                currentCanvas.style.transform = 'none';
             } else {
                 if (originalCanvasState.bufferWidth !== undefined) {
                     currentCanvas.width = originalCanvasState.bufferWidth;
@@ -266,9 +371,6 @@ window.XSheetApp = window.XSheetApp || {};
         }
     };
 
-    /******************************************************************
-     *  H-Lock: translate the overlay left whenever the sheet scrolls
-     ******************************************************************/
     (function addHorizontalLock() {
         let scroller, drawingOverlayCanvasElement;
 
@@ -278,7 +380,7 @@ window.XSheetApp = window.XSheetApp || {};
         }
 
         _hLock_syncScrollTransforms = function () {
-            if (!scroller && !drawingOverlayCanvasElement) initLockElements();
+            if (!scroller && !drawingOverlayCanvasElement) { initLockElements(); }
             if (!scroller || !drawingOverlayCanvasElement) return;
 
             if (!isExportPrepared) {
@@ -292,6 +394,7 @@ window.XSheetApp = window.XSheetApp || {};
         function setupScrollListener() {
             if (!scroller) initLockElements();
             if (scroller) {
+                scroller.removeEventListener("scroll", _hLock_syncScrollTransforms);
                 scroller.addEventListener("scroll", _hLock_syncScrollTransforms, { passive: true });
                 _hLock_syncScrollTransforms();
             } else {
@@ -300,30 +403,9 @@ window.XSheetApp = window.XSheetApp || {};
         }
 
         if (document.readyState === "complete" || document.readyState === "interactive") {
-            setTimeout(setupScrollListener, 0);
+            setTimeout(() => { setupScrollListener(); }, 0);
         } else {
-            document.addEventListener("DOMContentLoaded", () => setTimeout(setupScrollListener, 0));
-        }
-
-        function patchPrepareForExport() {
-            if (window.XSheetApp.DrawingCanvas && window.XSheetApp.DrawingCanvas.prepareForExport) {
-                const originalDCPrepareForExport = window.XSheetApp.DrawingCanvas.prepareForExport;
-                window.XSheetApp.DrawingCanvas.prepareForExport = function (isPreparing) {
-                    originalDCPrepareForExport.call(this, isPreparing);
-                    if (!isPreparing) {
-                        requestAnimationFrame(_hLock_syncScrollTransforms);
-                    } else {
-                        if (drawingOverlayCanvasElement) drawingOverlayCanvasElement.style.transform = 'none';
-                    }
-                };
-            } else {
-                setTimeout(patchPrepareForExport, 100);
-            }
-        }
-        if (document.readyState === "complete" || document.readyState === "interactive") {
-            setTimeout(patchPrepareForExport, 50);
-        } else {
-            document.addEventListener("DOMContentLoaded", () => setTimeout(patchPrepareForExport, 50));
+            document.addEventListener("DOMContentLoaded", () => { setupScrollListener(); });
         }
     })();
 })();

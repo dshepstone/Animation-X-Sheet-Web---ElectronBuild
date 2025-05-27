@@ -104,11 +104,9 @@ class ProjectData {
             this.isModified = true;
 
             const requiredFrames = Math.ceil(this.audio.duration * this.metadata.fps);
-            // Update the frame count FIRST, then dispatch audioLoaded
             if (requiredFrames > this.frameCount) {
-                this.setFrameCount(requiredFrames); // This will dispatch 'frameCount' reason
+                this.setFrameCount(requiredFrames);
             }
-            // Now dispatch audioLoaded after frame count is updated
             document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'audioLoaded' } }));
         } else {
             this.clearAudioData();
@@ -122,7 +120,6 @@ class ProjectData {
             currentTime: 0
         };
         this.isModified = true;
-        // console.log("ProjectData: Audio data cleared.");
         if (dispatchEvent) {
             document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'audioCleared' } }));
         }
@@ -213,3 +210,4 @@ class ProjectData {
         document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'projectLoaded' } }));
     }
 }
+window.ProjectData = ProjectData; // Assign to window for dependency check
