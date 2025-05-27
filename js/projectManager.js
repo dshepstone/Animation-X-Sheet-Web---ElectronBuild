@@ -207,13 +207,11 @@ To use this project:
 
     async saveScene() {
         if (!this.projectDataRef.sceneFolderHandle) {
-            // Fallback to FileHandler for regular save
-            if (this.fileHandlerRef && this.fileHandlerRef.saveProject) {
-                return await this.fileHandlerRef.saveProject();
-            } else {
-                console.error("ProjectManager: No scene folder set and no fileHandler available");
-                return { success: false, error: "No project folder set" };
+            console.error("ProjectManager: No scene folder set - cannot save");
+            if (this.uiElements.statusBar) {
+                this.uiElements.statusBar.textContent = "Status: No project folder set - create or set project first";
             }
+            return { success: false, error: "No project folder set" };
         }
 
         if (this.uiElements.statusBar) {
@@ -250,13 +248,11 @@ To use this project:
 
     async loadScene() {
         if (!this.projectDataRef.sceneFolderHandle) {
-            // Fallback to FileHandler for regular load
-            if (this.fileHandlerRef && this.fileHandlerRef.loadProjectFilePicker) {
-                return await this.fileHandlerRef.loadProjectFilePicker();
-            } else {
-                console.error("ProjectManager: No scene folder set and no fileHandler available");
-                return { success: false, error: "No project folder set" };
+            console.error("ProjectManager: No scene folder set - cannot load");
+            if (this.uiElements.statusBar) {
+                this.uiElements.statusBar.textContent = "Status: No project folder set - create or set project first";
             }
+            return { success: false, error: "No project folder set" };
         }
 
         if (this.uiElements.statusBar) {
@@ -275,11 +271,14 @@ To use this project:
 
             this.projectDataRef.fromSerializableObject(data);
 
-            // Try to load associated audio file
+            // Try to load associated audio file from project audio folder
             if (data.audio && data.audio.fileName && this.projectDataRef.audioFolderHandle) {
                 const audioLoaded = await this.tryLoadProjectAudio(data.audio.fileName);
                 if (audioLoaded) {
                     console.log(`ProjectManager: Associated audio "${data.audio.fileName}" loaded automatically`);
+                    if (this.uiElements.statusBar) {
+                        this.uiElements.statusBar.textContent = `Status: Scene ${file.name} loaded with audio`;
+                    }
                 } else {
                     console.log(`ProjectManager: Audio file "${data.audio.fileName}" not found in project audio folder`);
 
@@ -291,11 +290,15 @@ To use this project:
                             needsReimport: true
                         }
                     }));
-                }
-            }
 
-            if (this.uiElements.statusBar) {
-                this.uiElements.statusBar.textContent = `Status: Scene ${file.name} loaded`;
+                    if (this.uiElements.statusBar) {
+                        this.uiElements.statusBar.textContent = `Status: Scene ${file.name} loaded (audio needs re-import)`;
+                    }
+                }
+            } else {
+                if (this.uiElements.statusBar) {
+                    this.uiElements.statusBar.textContent = `Status: Scene ${file.name} loaded`;
+                }
             }
 
             return { success: true, fileName: file.name };
@@ -321,11 +324,13 @@ To use this project:
         }
 
         try {
+            console.log(`ProjectManager: Attempting to load audio "${audioFileName}" from project folder`);
             const audioFileHandle = await this.projectDataRef.audioFolderHandle.getFileHandle(audioFileName);
             const audioFile = await audioFileHandle.getFile();
 
             // Load the audio using the AudioHandler
             await this.audioHandlerRef.loadAudioFile(audioFile);
+            console.log(`ProjectManager: Successfully loaded project audio "${audioFileName}"`);
             return true;
         } catch (error) {
             console.log(`ProjectManager: Audio file "${audioFileName}" not found in project audio folder:`, error.message);
@@ -334,7 +339,19 @@ To use this project:
     },
 
     async importAudio() {
+        console.log("ProjectManager: importAudio called");
+
+        if (!this.isSupported) {
+            console.log("ProjectManager: File System Access API not supported, falling back to regular import");
+            // Fallback to regular audio import
+            if (this.uiElements.fileInputAudio) {
+                this.uiElements.fileInputAudio.click();
+            }
+            return false;
+        }
+
         if (!this.projectDataRef.audioFolderHandle) {
+            console.log("ProjectManager: No audio folder handle, falling back to regular import");
             // Fallback to regular audio import
             if (this.uiElements.fileInputAudio) {
                 this.uiElements.fileInputAudio.click();
@@ -347,32 +364,68 @@ To use this project:
         }
 
         try {
+            console.log("ProjectManager: Showing file picker for audio import, starting in project audio folder");
             const [fileHandle] = await window.showOpenFilePicker({
                 types: [
                     {
                         description: "Audio files",
                         accept: {
-                            "audio/*": [".mp3", ".wav", ".ogg", ".m4a", ".aac"]
+                            "audio/*": [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"]
                         }
                     }
-                ]
+                ],
+                startIn: this.projectDataRef.audioFolderHandle  // Start in project's audio folder
             });
 
             const file = await fileHandle.getFile();
+            console.log(`ProjectManager: Selected audio file: ${file.name}`);
 
-            // Copy to project audio folder
-            const audioFileHandle = await this.projectDataRef.audioFolderHandle.getFileHandle(file.name, { create: true });
-            const writable = await audioFileHandle.createWritable();
-            await writable.write(file);
-            await writable.close();
+            // Check if file is already in the project audio folder
+            let audioFileInProject = file;
+            let needToCopy = true;
 
-            // Load the audio using AudioHandler
+            try {
+                // Try to get the file from project folder to see if it's already there
+                const existingFileHandle = await this.projectDataRef.audioFolderHandle.getFileHandle(file.name);
+                const existingFile = await existingFileHandle.getFile();
+
+                // If file exists and has same size, assume it's the same file
+                if (existingFile.size === file.size) {
+                    console.log("ProjectManager: File already exists in project folder, using existing file");
+                    audioFileInProject = existingFile;
+                    needToCopy = false;
+                }
+            } catch (e) {
+                // File doesn't exist in project folder, need to copy
+                console.log("ProjectManager: File not in project folder, will copy");
+            }
+
+            // Copy to project audio folder if needed
+            if (needToCopy) {
+                console.log("ProjectManager: Copying file to project audio folder");
+                const audioFileHandle = await this.projectDataRef.audioFolderHandle.getFileHandle(file.name, { create: true });
+                const writable = await audioFileHandle.createWritable();
+                await writable.write(file);
+                await writable.close();
+                console.log("ProjectManager: File copied to project folder");
+
+                // Get the file from the project folder for loading
+                const copiedFileHandle = await this.projectDataRef.audioFolderHandle.getFileHandle(file.name);
+                audioFileInProject = await copiedFileHandle.getFile();
+            }
+
+            // Load the audio using AudioHandler - use the file from project folder
             if (this.audioHandlerRef) {
-                await this.audioHandlerRef.loadAudioFile(file);
+                console.log("ProjectManager: Loading audio via AudioHandler from project folder");
+                await this.audioHandlerRef.loadAudioFile(audioFileInProject);
+                console.log("ProjectManager: Audio loaded successfully onto x-sheet");
+            } else {
+                console.error("ProjectManager: AudioHandler not available");
+                throw new Error("AudioHandler not available");
             }
 
             if (this.uiElements.statusBar) {
-                this.uiElements.statusBar.textContent = "Status: Audio imported to project";
+                this.uiElements.statusBar.textContent = `Status: Audio "${file.name}" imported and loaded`;
             }
 
             return true;
@@ -382,7 +435,10 @@ To use this project:
                 if (this.uiElements.statusBar) {
                     this.uiElements.statusBar.textContent = `Status: Audio import failed - ${error.message}`;
                 }
+                // Show user-friendly error message
+                alert(`Failed to import audio: ${error.message}`);
             } else {
+                console.log("ProjectManager: Audio import cancelled by user");
                 if (this.uiElements.statusBar) {
                     this.uiElements.statusBar.textContent = "Status: Audio import cancelled";
                 }

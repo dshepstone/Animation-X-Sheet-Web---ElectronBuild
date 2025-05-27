@@ -52,11 +52,17 @@ document.addEventListener('DOMContentLoaded', () => {
         window.XSheetApp.ExportHandler.init(projectData, xsheet, window.XSheetApp.DrawingCanvas);
     } else { console.error("ExportHandler module not loaded or init function missing."); }
 
+    // Initialize FileHandler but DON'T let it attach save/load listeners
+    // We'll handle those ourselves to avoid conflicts
     if (window.XSheetApp.FileHandler && typeof window.XSheetApp.FileHandler.init === 'function') {
-        window.XSheetApp.FileHandler.init(projectData, audioHandler, xsheet, elements);
+        // Create a modified elements object without save/load buttons to prevent conflicts
+        const fileHandlerElements = { ...elements };
+        delete fileHandlerElements.btnSaveProject;
+        delete fileHandlerElements.btnLoadProject;
+        window.XSheetApp.FileHandler.init(projectData, audioHandler, xsheet, fileHandlerElements);
     } else { console.error("FileHandler module not loaded or init function missing."); }
 
-    // NEW: Initialize ProjectManager
+    // Initialize ProjectManager
     if (window.XSheetApp.ProjectManager && typeof window.XSheetApp.ProjectManager.init === 'function') {
         window.XSheetApp.ProjectManager.init(projectData, audioHandler, window.XSheetApp.FileHandler, elements);
     } else { console.error("ProjectManager module not loaded or init function missing."); }
@@ -106,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (elements.metaShotNumber) elements.metaShotNumber.value = projectData.metadata.shotNumber || "";
     }
 
-    // Helper function to check if project folder is set
+    // Helper function to check if project folder is set - DOES NOT TRIGGER FILE DIALOGS
     function checkProjectFolderSet(action) {
         if (!projectData.projectFolderHandle || !projectData.sceneFolderHandle) {
             const message = `To ${action}, you need to first create or set a project folder.\n\n` +
@@ -125,19 +131,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.statusBar) elements.statusBar.textContent = "Status: Ready";
 
     // Enhanced Audio Import - now supports project-aware importing
-    elements.btnImportAudio?.addEventListener('click', async () => {
+    elements.btnImportAudio?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        console.log("Import Audio clicked. Project folder handle:", !!projectData.audioFolderHandle);
+
         if (projectData.audioFolderHandle && window.XSheetApp.ProjectManager) {
+            console.log("Using project manager for audio import");
             // Use project manager for import
-            await window.XSheetApp.ProjectManager.importAudio();
+            const result = await window.XSheetApp.ProjectManager.importAudio();
+            console.log("Project audio import result:", result);
         } else {
+            console.log("Using fallback file input for audio import");
             // Fallback to regular file input
-            elements.fileInputAudio?.click();
+            if (elements.fileInputAudio) {
+                elements.fileInputAudio.click();
+            }
         }
     });
 
     elements.fileInputAudio?.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
+            console.log("Loading audio file via file input:", file.name);
             if (elements.statusBar) elements.statusBar.textContent = `Status: Importing audio ${file.name}...`;
             await audioHandler.loadAudioFile(file);
             if (elements.statusBar) elements.statusBar.textContent = `Status: Audio ${file.name} processed.`;
@@ -145,22 +162,32 @@ document.addEventListener('DOMContentLoaded', () => {
         e.target.value = null;
     });
 
-    // Enhanced Save/Load - now requires project folder to be set
-    elements.btnSaveProject?.addEventListener('click', async () => {
+    // FIXED Save/Load - Completely prevent file dialogs when no project is set
+    elements.btnSaveProject?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        console.log("Save button clicked. Scene folder handle:", !!projectData.sceneFolderHandle);
+
         if (projectData.sceneFolderHandle && window.XSheetApp.ProjectManager) {
+            console.log("Using project manager for save");
             // Use project manager for save
             await window.XSheetApp.ProjectManager.saveScene();
-        } else if (checkProjectFolderSet('save your scene')) {
-            // This won't execute if checkProjectFolderSet returns false
-            // But if it somehow does, fall back to regular file handler
-            if (window.XSheetApp.FileHandler) {
-                await window.XSheetApp.FileHandler.saveProject();
-            }
+        } else {
+            console.log("No project folder set - showing warning only");
+            // Show warning and prevent save until project is set - NO FILE DIALOGS
+            checkProjectFolderSet('save your scene');
         }
     });
 
-    elements.btnLoadProject?.addEventListener('click', async () => {
+    elements.btnLoadProject?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        console.log("Load button clicked. Scene folder handle:", !!projectData.sceneFolderHandle);
+
         if (projectData.sceneFolderHandle && window.XSheetApp.ProjectManager) {
+            console.log("Using project manager for load");
             // Use project manager for load
             const result = await window.XSheetApp.ProjectManager.loadScene();
             if (result.success && result.fileName) {
@@ -169,12 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateAudioScrubSlider();
                 updatePlaybackButtonsUI(false);
             }
-        } else if (checkProjectFolderSet('load a scene')) {
-            // This won't execute if checkProjectFolderSet returns false
-            // But if it somehow does, fall back to regular file handler
-            if (window.XSheetApp.FileHandler) {
-                await window.XSheetApp.FileHandler.loadProjectFilePicker();
-            }
+        } else {
+            console.log("No project folder set - showing warning only");
+            // Show warning and prevent load until project is set - NO FILE DIALOGS
+            checkProjectFolderSet('load a scene');
         }
     });
 
@@ -224,6 +249,15 @@ document.addEventListener('DOMContentLoaded', () => {
             projectData.audio.currentTime = time;
             if (xsheet?.highlightFrame) xsheet.highlightFrame(Math.floor(time * (projectData.metadata.fps || 24)));
             updateAudioInfo();
+
+            // Add scrubbing functionality like the vertical waveform
+            if (isSliderDragging) {
+                const fps = projectData.metadata.fps || 24;
+                if (Math.abs(time - (projectData.lastScrubPlayTime || 0)) > (0.7 / fps)) {
+                    audioHandler.playScrubSnippet(time, 1.0 / fps);
+                    projectData.lastScrubPlayTime = time;
+                }
+            }
         }
     });
 

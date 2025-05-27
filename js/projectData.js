@@ -26,6 +26,9 @@ class ProjectData {
             currentTime: 0,
         };
 
+        // Add property for audio scrubbing throttling
+        this.lastScrubPlayTime = 0;
+
         this.drawingLayers = [{ name: "foreground", visible: true, objects: [] }];
         this.activeDrawingLayerIndex = 0;
 
@@ -136,6 +139,7 @@ class ProjectData {
             duration: 0, sampleRate: 0, numberOfChannels: 0, waveformData: [],
             currentTime: 0
         };
+        this.lastScrubPlayTime = 0;
         this.isModified = true;
         if (dispatchEvent) {
             document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'audioCleared' } }));

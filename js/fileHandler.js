@@ -14,20 +14,12 @@ window.XSheetApp.FileHandler = {
         this.xsheetRef = xsheet;
         this.uiElements = domElements;
 
-        if (this.uiElements.btnSaveProject) {
-            this.uiElements.btnSaveProject.addEventListener('click', () => this.saveProject());
-        } else {
-            console.warn("FileHandler: btnSaveProject not found in domElements.");
-        }
+        // NOTE: We no longer add event listeners to save/load buttons here
+        // This is handled by main.js to avoid conflicts with ProjectManager
+        console.log("FileHandler: Skipping save/load button event listeners (handled by main.js)");
 
-        if (this.uiElements.btnLoadProject) {
-            this.uiElements.btnLoadProject.addEventListener('click', () => this.loadProjectFilePicker());
-        } else {
-            console.warn("FileHandler: btnLoadProject not found in domElements.");
-        }
-
+        // Only set up the legacy file input listener for fallback scenarios
         if (this.uiElements.fileInputLoadProject) {
-            // Corrected: Call the method using 'this._handleLegacyFileLoad'
             this.uiElements.fileInputLoadProject.addEventListener('change', (event) => this._handleLegacyFileLoad(event));
         } else {
             console.warn("FileHandler: fileInputLoadProject not found for fallback.");
@@ -74,7 +66,7 @@ window.XSheetApp.FileHandler = {
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error("FileHandler: Save error:", err);
-                alert("Couldn’t save file: " + err.message);
+                alert("Couldn't save file: " + err.message);
                 if (this.uiElements.statusBar) this.uiElements.statusBar.textContent = "Status: Save error";
             } else {
                 console.log("FileHandler: Save operation cancelled by user.");
@@ -98,7 +90,6 @@ window.XSheetApp.FileHandler = {
                     multiple: false
                 });
                 const file = await handle.getFile();
-                // Corrected: Call the method using 'this._processLoadedFile'
                 await this._processLoadedFile(file);
             } catch (err) {
                 if (err.name !== 'AbortError') {
@@ -122,17 +113,14 @@ window.XSheetApp.FileHandler = {
         }
     },
 
-    // Corrected: Changed from #handleLegacyFileLoad to _handleLegacyFileLoad
     _handleLegacyFileLoad: async function (event) {
         const file = event?.target?.files?.[0];
         if (file) {
-            // Corrected: Call the method using 'this._processLoadedFile'
             await this._processLoadedFile(file);
         }
         if (event?.target) event.target.value = null;
     },
 
-    // Corrected: Changed from #processLoadedFile to _processLoadedFile
     _processLoadedFile: async function (file) {
         if (!file) {
             console.warn("FileHandler _processLoadedFile: No file provided.");
@@ -172,7 +160,7 @@ window.XSheetApp.FileHandler = {
 
         } catch (err) {
             console.error("FileHandler: Error loading or parsing file content:", err);
-            alert("Couldn’t load or parse file: " + err.message + "\nIs it a valid X-Sheet JSON file?");
+            alert("Couldn't load or parse file: " + err.message + "\nIs it a valid X-Sheet JSON file?");
             if (this.uiElements.statusBar) this.uiElements.statusBar.textContent = "Status: Error loading project file";
         }
     }
