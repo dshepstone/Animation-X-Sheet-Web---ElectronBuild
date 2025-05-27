@@ -484,6 +484,33 @@ window.XSheetApp.ExportHandler = {
         }
     },
 
+    // Helper method to generate versioned filename for exports to prevent overwriting
+    async _getVersionedExportFileName(baseFileName) {
+        if (!this.projectData.exportsFolderHandle) {
+            return baseFileName;
+        }
+
+        let version = 1;
+        let finalFileName = baseFileName;
+
+        // Keep checking if file exists and increment version
+        while (true) {
+            try {
+                await this.projectData.exportsFolderHandle.getFileHandle(finalFileName);
+                // File exists, try next version
+                version++;
+                const nameWithoutExt = baseFileName.replace('.pdf', '');
+                finalFileName = `${nameWithoutExt}_v${version}.pdf`;
+            } catch (e) {
+                // File doesn't exist, we can use this filename
+                break;
+            }
+        }
+
+        console.log(`ExportHandler: Auto-versioned export filename: ${finalFileName}`);
+        return finalFileName;
+    },
+
     async exportToPDF() {
         const statusBar = document.getElementById('statusBar');
         if (this.isExporting) { statusBar.textContent = "Status: Export already in progress."; return; }
@@ -631,12 +658,46 @@ window.XSheetApp.ExportHandler = {
                 }
             }
 
+            // UPDATED: Save to project exports folder with versioning or fall back to download
             const date = new Date().toISOString().slice(0, 10);
             const projectName = this.projectData.projectName || 'AnimationXSheet';
-            const filename = `${projectName}_${date}_${pdfOrientation}.pdf`;
-            pdf.save(filename);
-            const pageInfo = finalPdfImageTotalHeightPt > pdfPrintableHeightPt ? `, ${Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt)} pages` : ', single page';
-            statusBar.textContent = `Status: PDF exported - ${pdfOrientation}${pageInfo}`;
+            const baseFilename = `${projectName}_${date}_${pdfOrientation}.pdf`;
+
+            // Try to save to project exports folder if available
+            if (this.projectData.exportsFolderHandle) {
+                try {
+                    console.log("ExportHandler: Saving PDF to project exports folder with versioning");
+                    statusBar.textContent = "Status: Saving PDF to project exports folder...";
+
+                    // Get versioned filename to prevent overwriting
+                    const versionedFilename = await this._getVersionedExportFileName(baseFilename);
+
+                    const fileHandle = await this.projectData.exportsFolderHandle.getFileHandle(versionedFilename, { create: true });
+                    const writable = await fileHandle.createWritable();
+
+                    // Convert PDF to blob and write to project folder
+                    const pdfBlob = pdf.output('blob');
+                    await writable.write(pdfBlob);
+                    await writable.close();
+
+                    const pageInfo = finalPdfImageTotalHeightPt > pdfPrintableHeightPt ? `, ${Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt)} pages` : ', single page';
+                    statusBar.textContent = `Status: PDF saved to project exports folder - ${versionedFilename}${pageInfo}`;
+
+                    console.log(`ExportHandler: PDF saved to project exports folder as ${versionedFilename}`);
+                } catch (projectSaveError) {
+                    console.warn("ExportHandler: Failed to save to project folder, falling back to download:", projectSaveError);
+                    // Fallback to regular download
+                    pdf.save(baseFilename);
+                    const pageInfo = finalPdfImageTotalHeightPt > pdfPrintableHeightPt ? `, ${Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt)} pages` : ', single page';
+                    statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}`;
+                }
+            } else {
+                // No project folder or API not supported - use regular download
+                console.log("ExportHandler: No project exports folder, using regular download");
+                pdf.save(baseFilename);
+                const pageInfo = finalPdfImageTotalHeightPt > pdfPrintableHeightPt ? `, ${Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt)} pages` : ', single page';
+                statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}`;
+            }
 
         } catch (error) {
             console.error("Error exporting to PDF:", error);

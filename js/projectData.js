@@ -5,10 +5,11 @@ class ProjectData {
         this.filePath = null;
         this.isModified = false;
 
-        // Project folder structure
+        // Project folder structure - NOW INCLUDES EXPORTS FOLDER
         this.projectFolderHandle = null;
         this.sceneFolderHandle = null;
         this.audioFolderHandle = null;
+        this.exportsFolderHandle = null;  // NEW: Exports folder for PDFs
         this.projectPath = null;
 
         this.metadata = {
@@ -37,14 +38,17 @@ class ProjectData {
     }
 
     initNewProject(fps = 24, frameCount = 48) {
+        console.log("ProjectData: initNewProject called - resetting everything");
+
         this.projectName = `AnimationXSheet_${new Date().toISOString().slice(0, 10)}`;
         this.filePath = null;
         this.isModified = false;
 
-        // Clear project folder references when creating new project
+        // Clear project folder references when creating new project - INCLUDING EXPORTS
         this.projectFolderHandle = null;
         this.sceneFolderHandle = null;
         this.audioFolderHandle = null;
+        this.exportsFolderHandle = null;  // Clear exports folder handle
         this.projectPath = null;
 
         this.metadata = {
@@ -58,12 +62,19 @@ class ProjectData {
         this.drawingLayers = [{ name: "foreground", visible: true, objects: [] }];
         this.activeDrawingLayerIndex = 0;
 
-        // Dispatch project folder changed event
+        console.log("ProjectData: Project folder handles cleared, dispatching events");
+
+        // Dispatch project folder changed event (to update UI)
         document.dispatchEvent(new CustomEvent('projectFolderChanged', {
             detail: { projectPath: null }
         }));
 
-        document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'newProject' } }));
+        // Dispatch project data changed event (to refresh x-sheet)
+        document.dispatchEvent(new CustomEvent('projectDataChanged', {
+            detail: { reason: 'newProject' }
+        }));
+
+        console.log("ProjectData: initNewProject completed");
     }
 
     _initializeRows() {
@@ -182,14 +193,15 @@ class ProjectData {
         document.dispatchEvent(new CustomEvent('drawingChanged', { detail: { allLayers: true } }));
     }
 
-    // NEW: Project folder management
-    setProjectFolder(projectFolderHandle, sceneFolderHandle, audioFolderHandle, projectPath) {
+    // UPDATED: Project folder management - NOW INCLUDES EXPORTS FOLDER
+    setProjectFolder(projectFolderHandle, sceneFolderHandle, audioFolderHandle, exportsFolderHandle, projectPath) {
         this.projectFolderHandle = projectFolderHandle;
         this.sceneFolderHandle = sceneFolderHandle;
         this.audioFolderHandle = audioFolderHandle;
+        this.exportsFolderHandle = exportsFolderHandle;  // NEW: Store exports folder handle
         this.projectPath = projectPath;
 
-        console.log(`ProjectData: Project folder set to "${projectPath}"`);
+        console.log(`ProjectData: Project folder set to "${projectPath}" with exports folder`);
 
         document.dispatchEvent(new CustomEvent('projectFolderChanged', {
             detail: { projectPath: this.projectPath }

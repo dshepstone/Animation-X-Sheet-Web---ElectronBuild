@@ -57,9 +57,12 @@ window.XSheetApp.ProjectManager = {
                 mode: 'readwrite'
             });
 
-            // Create subfolders
+            // Create subfolders - NOW INCLUDING EXPORTS FOLDER
             const sceneFolderHandle = await projectFolderHandle.getDirectoryHandle('scenes', { create: true });
             const audioFolderHandle = await projectFolderHandle.getDirectoryHandle('audio', { create: true });
+            const exportsFolderHandle = await projectFolderHandle.getDirectoryHandle('exports', { create: true });
+
+            console.log("ProjectManager: Created project subfolders: scenes, audio, exports");
 
             // Create a README file
             const readmeHandle = await projectFolderHandle.getFileHandle('README.txt', { create: true });
@@ -69,25 +72,30 @@ window.XSheetApp.ProjectManager = {
 This folder contains your X-Sheet animation project:
 - scenes/ - Contains your scene files (.json)
 - audio/ - Contains your audio files
+- exports/ - Contains your exported PDF files
 
 To use this project:
 1. Click "Set Project" and select this folder
 2. Import audio files to the audio/ folder
 3. Save scenes to the scenes/ folder
+4. Export PDFs will be saved to the exports/ folder automatically
 `);
             await writable.close();
 
+            // UPDATED: Pass exports folder handle to setProjectFolder
             this.projectDataRef.setProjectFolder(
                 projectFolderHandle,
                 sceneFolderHandle,
                 audioFolderHandle,
+                exportsFolderHandle,  // NEW: Pass exports folder handle
                 projectFolderHandle.name
             );
 
             if (this.uiElements.statusBar) {
-                this.uiElements.statusBar.textContent = "Status: Project created successfully";
+                this.uiElements.statusBar.textContent = "Status: Project created successfully with exports folder";
             }
 
+            console.log("ProjectManager: Project created with exports folder support");
             return true;
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -120,32 +128,44 @@ To use this project:
                 mode: 'readwrite'
             });
 
-            // Check for required subfolders
-            let sceneFolderHandle, audioFolderHandle;
+            // Check for required subfolders - NOW INCLUDING EXPORTS
+            let sceneFolderHandle, audioFolderHandle, exportsFolderHandle;
 
             try {
                 sceneFolderHandle = await projectFolderHandle.getDirectoryHandle('scenes');
             } catch (e) {
                 sceneFolderHandle = await projectFolderHandle.getDirectoryHandle('scenes', { create: true });
+                console.log("ProjectManager: Created missing scenes folder");
             }
 
             try {
                 audioFolderHandle = await projectFolderHandle.getDirectoryHandle('audio');
             } catch (e) {
                 audioFolderHandle = await projectFolderHandle.getDirectoryHandle('audio', { create: true });
+                console.log("ProjectManager: Created missing audio folder");
             }
 
+            try {
+                exportsFolderHandle = await projectFolderHandle.getDirectoryHandle('exports');
+            } catch (e) {
+                exportsFolderHandle = await projectFolderHandle.getDirectoryHandle('exports', { create: true });
+                console.log("ProjectManager: Created missing exports folder");
+            }
+
+            // UPDATED: Pass all folder handles including exports
             this.projectDataRef.setProjectFolder(
                 projectFolderHandle,
                 sceneFolderHandle,
                 audioFolderHandle,
+                exportsFolderHandle,  // NEW: Pass exports folder handle
                 projectFolderHandle.name
             );
 
             if (this.uiElements.statusBar) {
-                this.uiElements.statusBar.textContent = "Status: Project folder set successfully";
+                this.uiElements.statusBar.textContent = "Status: Project folder set successfully with exports folder";
             }
 
+            console.log("ProjectManager: Project folder set with exports support");
             return true;
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -170,6 +190,8 @@ To use this project:
             }
         }
 
+        console.log("ProjectManager: Starting project reset");
+
         // Stop any audio playback
         if (this.audioHandlerRef) {
             this.audioHandlerRef.stopContinuous();
@@ -178,6 +200,7 @@ To use this project:
         }
 
         // Reset project data to initial state (48 frames, 24 fps, etc.)
+        // This should clear project folder handles and dispatch events
         this.projectDataRef.initNewProject(24, 48);
 
         // Clear any drawing tools state
@@ -198,11 +221,22 @@ To use this project:
             window.XSheetApp.DrawingCanvas.refresh();
         }
 
-        if (this.uiElements.statusBar) {
-            this.uiElements.statusBar.textContent = "Status: Reset to new X-Sheet";
-        }
+        // Force UI updates - this should happen automatically via events but let's ensure it
+        setTimeout(() => {
+            // Update project status (should show "No project set")
+            this.updateProjectStatus();
 
-        console.log("ProjectManager: Project reset to initial state");
+            // Trigger UI updates in main.js
+            document.dispatchEvent(new CustomEvent('projectDataChanged', {
+                detail: { reason: 'reset' }
+            }));
+
+            if (this.uiElements.statusBar) {
+                this.uiElements.statusBar.textContent = "Status: Reset to new X-Sheet - Set up project folder to save/load";
+            }
+        }, 100);
+
+        console.log("ProjectManager: Project reset completed - all project folder paths cleared");
     },
 
     async saveScene() {
@@ -221,11 +255,35 @@ To use this project:
         try {
             const serializable = this.projectDataRef.toSerializableObject();
             const jsonData = JSON.stringify(serializable, null, 2);
-            const fileName = (this.projectDataRef.projectName || 'scene')
+
+            // Generate default filename
+            const defaultFileName = (this.projectDataRef.projectName || 'scene')
                 + '_' + new Date().toISOString().slice(0, 10).replace(/-/g, '')
                 + '.json';
 
-            const fileHandle = await this.projectDataRef.sceneFolderHandle.getFileHandle(fileName, { create: true });
+            let fileHandle;
+            let finalFileName;
+
+            if (window.showSaveFilePicker) {
+                // Let user choose filename via save dialog
+                console.log("ProjectManager: Using save dialog for scene file");
+                fileHandle = await window.showSaveFilePicker({
+                    suggestedName: defaultFileName,
+                    startIn: this.projectDataRef.sceneFolderHandle,
+                    types: [{
+                        description: "X-Sheet Scene",
+                        accept: { "application/json": [".json"] }
+                    }]
+                });
+                finalFileName = fileHandle.name;
+            } else {
+                // Fallback: Auto-version to prevent overwriting
+                console.log("ProjectManager: Auto-versioning scene file");
+                finalFileName = await this._getVersionedFileName(defaultFileName);
+                fileHandle = await this.projectDataRef.sceneFolderHandle.getFileHandle(finalFileName, { create: true });
+            }
+
+            // Write the file
             const writable = await fileHandle.createWritable();
             await writable.write(jsonData);
             await writable.close();
@@ -233,17 +291,49 @@ To use this project:
             this.projectDataRef.isModified = false;
 
             if (this.uiElements.statusBar) {
-                this.uiElements.statusBar.textContent = `Status: Scene saved as ${fileName}`;
+                this.uiElements.statusBar.textContent = `Status: Scene saved as ${finalFileName}`;
             }
 
-            return { success: true, fileName };
+            console.log(`ProjectManager: Scene saved as ${finalFileName}`);
+            return { success: true, fileName: finalFileName };
         } catch (error) {
-            console.error("ProjectManager: Error saving scene:", error);
-            if (this.uiElements.statusBar) {
-                this.uiElements.statusBar.textContent = `Status: Save failed - ${error.message}`;
+            if (error.name !== 'AbortError') {
+                console.error("ProjectManager: Error saving scene:", error);
+                if (this.uiElements.statusBar) {
+                    this.uiElements.statusBar.textContent = `Status: Save failed - ${error.message}`;
+                }
+                return { success: false, error: error.message };
+            } else {
+                console.log("ProjectManager: Save cancelled by user");
+                if (this.uiElements.statusBar) {
+                    this.uiElements.statusBar.textContent = "Status: Save cancelled";
+                }
+                return { success: false, error: 'Cancelled' };
             }
-            return { success: false, error: error.message };
         }
+    },
+
+    // Helper method to generate versioned filename to prevent overwriting
+    async _getVersionedFileName(baseFileName) {
+        let version = 1;
+        let finalFileName = baseFileName;
+
+        // Keep checking if file exists and increment version
+        while (true) {
+            try {
+                await this.projectDataRef.sceneFolderHandle.getFileHandle(finalFileName);
+                // File exists, try next version
+                version++;
+                const nameWithoutExt = baseFileName.replace('.json', '');
+                finalFileName = `${nameWithoutExt}_v${version}.json`;
+            } catch (e) {
+                // File doesn't exist, we can use this filename
+                break;
+            }
+        }
+
+        console.log(`ProjectManager: Auto-versioned filename: ${finalFileName}`);
+        return finalFileName;
     },
 
     async loadScene() {
