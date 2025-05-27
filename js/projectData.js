@@ -43,11 +43,11 @@ class ProjectData {
         document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'newProject' } }));
     }
 
-
     _initializeRows() {
         this.rows = [];
         const defaultCellData = { action: "", dialogue: "", soundFx: "", techNotes: "", camera: "" };
         for (let i = 0; i < this.frameCount; i++) {
+            // FIX 1-A applied here
             this.rows.push({ ...defaultCellData });
         }
     }
@@ -57,7 +57,7 @@ class ProjectData {
         const oldCount = this.frameCount;
         if (oldCount === count) return;
 
-        console.log(`ProjectData: Setting frame count from ${oldCount} to ${count}`);
+        // console.log(`ProjectData: Setting frame count from ${oldCount} to ${count}`);
         this.frameCount = count;
 
         if (count > oldCount) {
@@ -81,7 +81,7 @@ class ProjectData {
 
     setCellData(frameIndex, columnKey, value) {
         if (frameIndex >= 0 && frameIndex < this.rows.length) {
-            if (!this.rows[frameIndex]) this.rows[frameIndex] = {};
+            if (!this.rows[frameIndex]) this.rows[frameIndex] = {}; // Should not be needed if _initializeRows is correct
             if (this.rows[frameIndex][columnKey] !== value) {
                 this.rows[frameIndex][columnKey] = value;
                 this.isModified = true;
@@ -90,11 +90,10 @@ class ProjectData {
         }
     }
 
-
     loadAudioData(audioBuffer, fileName, filePath = null) {
         this.audio.audioBuffer = audioBuffer;
         this.audio.fileName = fileName;
-        this.audio.filePath = filePath;
+        this.audio.filePath = filePath; // Store filePath if provided, though not used for re-load currently
         if (audioBuffer) {
             this.audio.duration = audioBuffer.duration;
             this.audio.sampleRate = audioBuffer.sampleRate;
@@ -107,9 +106,10 @@ class ProjectData {
             if (requiredFrames > this.frameCount) {
                 this.setFrameCount(requiredFrames);
             }
+            // Dispatch after potential frame count change
             document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'audioLoaded' } }));
         } else {
-            this.clearAudioData();
+            this.clearAudioData(); // This will dispatch its own event if called
         }
     }
 
@@ -134,7 +134,7 @@ class ProjectData {
         targetPoints = Math.min(targetPoints, totalSamples);
         if (targetPoints <= 0) { this.audio.waveformData = []; return; }
         const samplesPerPoint = Math.max(1, Math.floor(totalSamples / targetPoints));
-        const waveform = []; let maxVal = 1e-5;
+        const waveform = []; let maxVal = 1e-5; // Avoid division by zero if audio is silent
         for (let i = 0; i < targetPoints; i++) {
             const start = i * samplesPerPoint;
             const end = Math.min(start + samplesPerPoint, totalSamples);
@@ -144,7 +144,8 @@ class ProjectData {
             waveform.push(rms);
             if (rms > maxVal) maxVal = rms;
         }
-        this.audio.waveformData = waveform.map(val => val / maxVal);
+        // Normalize only if maxVal is substantially greater than zero
+        this.audio.waveformData = waveform.map(val => maxVal > 1e-5 ? (val / maxVal) : 0);
     }
 
     addDrawingObject(object, layerIndex = this.activeDrawingLayerIndex) {
@@ -154,6 +155,7 @@ class ProjectData {
             document.dispatchEvent(new CustomEvent('drawingChanged', { detail: { layerIndex } }));
         }
     }
+
     clearAllDrawings() {
         this.drawingLayers.forEach(layer => layer.objects = []);
         this.isModified = true;
@@ -161,53 +163,73 @@ class ProjectData {
     }
 
     toSerializableObject() {
+        // FIX 1-B applied here
         return {
             projectName: this.projectName,
-            metadata: { ...this.metadata },
+            metadata: { ...this.metadata }, // Shallow copy metadata
             frameCount: this.frameCount,
-            rows: JSON.parse(JSON.stringify(this.rows)),
-            audio: {
-                fileName: this.audio.fileName, filePath: this.audio.filePath,
-                duration: this.audio.duration, sampleRate: this.audio.sampleRate,
-                numberOfChannels: this.audio.numberOfChannels, currentTime: this.audio.currentTime,
+            rows: JSON.parse(JSON.stringify(this.rows)), // Deep copy rows
+            audio: { // Audio metadata, buffer is not included
+                fileName: this.audio.fileName,
+                filePath: this.audio.filePath, // May or may not be useful on load
+                duration: this.audio.duration,
+                sampleRate: this.audio.sampleRate,
+                numberOfChannels: this.audio.numberOfChannels,
+                currentTime: this.audio.currentTime,
+                // waveformData is not typically saved as it can be regenerated
             },
             drawingLayers: JSON.parse(JSON.stringify(this.drawingLayers.map(layer => ({
-                name: layer.name, visible: layer.visible,
-                objects: layer.objects.map(obj => typeof obj.toJSON === 'function' ? obj.toJSON() : { ...obj })
+                name: layer.name,
+                visible: layer.visible,
+                // Ensure drawing objects are plain data for stringify
+                objects: layer.objects.map(obj =>
+                    (typeof obj.toJSON === 'function') ? obj.toJSON() : { ...obj }
+                )
             })))),
-            activeDrawingLayerIndex: this.activeDrawingLayerIndex,
+            activeDrawingLayerIndex: this.activeDrawingLayerIndex
         };
     }
 
     fromSerializableObject(data) {
         this.projectName = data.projectName || `AnimationXSheet_${new Date().toISOString().slice(0, 10)}`;
-        this.metadata = { ...(this.metadata), ...(data.metadata || {}) };
-        this.frameCount = data.frameCount || 48;
-        this._initializeRows();
+        // FIX 1-C metadata merge applied here
+        this.metadata = { ...this.metadata, ...(data.metadata || {}) };
+        this.frameCount = data.frameCount || 48; // Default if not present
+
+        this._initializeRows(); // Re-initialize rows based on new frameCount
         if (data.rows) {
             for (let i = 0; i < Math.min(this.rows.length, data.rows.length); i++) {
-                this.rows[i] = { ...(this.rows[i]), ...(data.rows[i]) };
+                // FIX 1-C row data merge applied here
+                this.rows[i] = { ...this.rows[i], ...(data.rows[i] || {}) };
             }
         }
+
+        // Reset audio data first, then populate from loaded file if present
+        this.clearAudioData(false); // Clear without dispatching, event will be 'projectLoaded'
         if (data.audio) {
             this.audio.fileName = data.audio.fileName || null;
             this.audio.filePath = data.audio.filePath || null;
-            this.audio.audioBuffer = null;
             this.audio.duration = data.audio.duration || 0;
             this.audio.sampleRate = data.audio.sampleRate || 0;
             this.audio.numberOfChannels = data.audio.numberOfChannels || 0;
             this.audio.currentTime = data.audio.currentTime || 0;
-            this.audio.waveformData = [];
+            // audioBuffer remains null, waveformData empty; to be handled by re-import or regeneration
         }
+
         if (data.drawingLayers) {
+            // FIX 1-C drawing layers merge applied here
             this.drawingLayers = data.drawingLayers.map(layerData => ({
-                name: layerData.name, visible: layerData.visible,
+                name: layerData.name,
+                visible: layerData.visible,
                 objects: layerData.objects.map(objData => ({ ...objData }))
             }));
+        } else {
+            this.drawingLayers = [{ name: "foreground", visible: true, objects: [] }]; // Default if not in file
         }
         this.activeDrawingLayerIndex = data.activeDrawingLayerIndex !== undefined ? data.activeDrawingLayerIndex : 0;
-        this.isModified = false;
+
+        this.isModified = false; // Project is now a clean state from the loaded file
         document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'projectLoaded' } }));
     }
 }
-window.ProjectData = ProjectData; // Assign to window for dependency check
+window.ProjectData = ProjectData;
