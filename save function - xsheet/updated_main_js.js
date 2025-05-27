@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btnSetProject: document.getElementById('btnSetProject'),
         btnReset: document.getElementById('btnReset'),
         projectStatus: document.getElementById('projectStatus'),
-
+        
         // Existing elements
         btnImportAudio: document.getElementById('btnImportAudio'),
         fileInputAudio: document.getElementById('fileInputAudio'),
@@ -106,18 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (elements.metaShotNumber) elements.metaShotNumber.value = projectData.metadata.shotNumber || "";
     }
 
-    // Helper function to check if project folder is set
-    function checkProjectFolderSet(action) {
-        if (!projectData.projectFolderHandle || !projectData.sceneFolderHandle) {
-            const message = `To ${action}, you need to first create or set a project folder.\n\n` +
-                `Click "Create Project" to create a new project folder, or\n` +
-                `Click "Set Project" to select an existing project folder.`;
-            alert(message);
-            return false;
-        }
-        return true;
-    }
-
     updateUIFromProjectData();
     updateAudioInfo();
     updateAudioScrubSlider();
@@ -145,17 +133,14 @@ document.addEventListener('DOMContentLoaded', () => {
         e.target.value = null;
     });
 
-    // Enhanced Save/Load - now requires project folder to be set
+    // Enhanced Save/Load - now supports project-aware saving
     elements.btnSaveProject?.addEventListener('click', async () => {
         if (projectData.sceneFolderHandle && window.XSheetApp.ProjectManager) {
             // Use project manager for save
             await window.XSheetApp.ProjectManager.saveScene();
-        } else if (checkProjectFolderSet('save your scene')) {
-            // This won't execute if checkProjectFolderSet returns false
-            // But if it somehow does, fall back to regular file handler
-            if (window.XSheetApp.FileHandler) {
-                await window.XSheetApp.FileHandler.saveProject();
-            }
+        } else if (window.XSheetApp.FileHandler) {
+            // Fallback to regular file handler
+            await window.XSheetApp.FileHandler.saveProject();
         }
     });
 
@@ -169,12 +154,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateAudioScrubSlider();
                 updatePlaybackButtonsUI(false);
             }
-        } else if (checkProjectFolderSet('load a scene')) {
-            // This won't execute if checkProjectFolderSet returns false
-            // But if it somehow does, fall back to regular file handler
-            if (window.XSheetApp.FileHandler) {
-                await window.XSheetApp.FileHandler.loadProjectFilePicker();
-            }
+        } else if (window.XSheetApp.FileHandler) {
+            // Fallback to regular file handler
+            await window.XSheetApp.FileHandler.loadProjectFilePicker();
         }
     });
 
@@ -188,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     elements.btnStop?.addEventListener('click', () => audioHandler.stopContinuous());
-
+    
     elements.framesInput?.addEventListener('change', (e) => {
         const newCount = parseInt(e.target.value);
         if (!isNaN(newCount) && newCount >= 1) {
@@ -197,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.value = projectData.frameCount;
         }
     });
-
+    
     elements.fpsInput?.addEventListener('change', (e) => {
         const newFps = parseInt(e.target.value);
         if (!isNaN(newFps) && newFps > 0 && projectData.metadata.fps !== newFps) {
@@ -209,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.value = projectData.metadata.fps;
         }
     });
-
+    
     elements.audioScrubSlider?.addEventListener('mousedown', () => { isSliderDragging = true; });
     elements.audioScrubSlider?.addEventListener('mouseup', () => {
         isSliderDragging = false;
@@ -289,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updatePlaybackButtonsUI(isPlaying);
         if (isPlaying) requestAnimationFrame(animationLoopForPlayback);
     });
-
+    
     document.addEventListener('playbackPositionChanged', (e) => {
         const position = e.detail.position;
         if (projectData.audio.audioBuffer) {

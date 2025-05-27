@@ -1,10 +1,8 @@
 /* css/style.css */
 :root {
-    --header-height: 60px;
-    /* Increased for project controls */
+    --header-height: 60px; /* Increased for project controls */
     --footer-height: 40px;
-    --left-toolbar-width: 70px;
-    /* Increased slightly for better button sizing */
+    --left-toolbar-width: 60px;
     --border-color: #ccc;
     --table-border-color: #999;
     --highlight-color: #a8d8ff;
@@ -146,53 +144,23 @@ body {
 }
 
 #left-toolbar button {
-    width: 45px;
+    width: 40px;
     height: 40px;
     padding: 0;
-    font-size: 1.2em;
+    font-size: 1.4em;
     border-radius: 4px;
-    border: 1px solid #ccc;
-    background-color: white;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-#left-toolbar button:hover {
-    background-color: #e8e8e8;
-    border-color: #999;
 }
 
 #left-toolbar button.active-tool {
     background-color: #4CAF50;
     color: white;
-    border-color: #388E3C;
-}
-
-#left-toolbar button.active-tool:hover {
-    background-color: #388E3C;
-}
-
-/* Special styling for clear drawings button */
-#btnClearAllDrawings {
-    background-color: #ffebee !important;
-    border-color: #f44336 !important;
-    color: #d32f2f !important;
-}
-
-#btnClearAllDrawings:hover {
-    background-color: #f44336 !important;
-    color: white !important;
 }
 
 #left-toolbar input[type="color"] {
-    width: 45px;
+    width: 40px;
     height: 30px;
     padding: 2px;
     border: 1px solid var(--border-color);
-    cursor: pointer;
 }
 
 #left-toolbar label {
@@ -200,7 +168,6 @@ body {
     margin-top: 8px;
     display: block;
     text-align: center;
-    width: 100%;
 }
 
 #left-toolbar select {
@@ -396,11 +363,6 @@ body {
     z-index: 20;
 }
 
-/* Special cursor for eraser tool */
-#drawingCanvasOverlay[data-tool="eraser"] {
-    cursor: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTAgNEwyMCAxNEwxMiAyMkwxMCAyMEwyIDEyTDEwIDRMMTIgMloiIGZpbGw9IiNmZmYiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLXdpZHRoPSIyIi8+Cjwvc3ZnPgo=') 12 12, crosshair;
-}
-
 .app-footer {
     padding: 5px 10px;
     background-color: #e0e0e0;
@@ -492,14 +454,14 @@ body {
         padding: 8px 5px;
         gap: 6px;
     }
-
+    
     .project-controls {
         order: -1;
         width: 100%;
         justify-content: flex-start;
         margin-bottom: 4px;
     }
-
+    
     #projectStatus {
         max-width: 150px;
     }
@@ -510,34 +472,19 @@ body {
         padding: 3px 6px;
         font-size: 10px;
     }
-
+    
     #projectStatus {
         font-size: 10px;
         max-width: 120px;
     }
-
+    
     .app-header button:not(.project-controls button) {
         padding: 4px 8px;
         font-size: 11px;
     }
-
+    
     .app-header input[type="number"] {
         width: 50px;
-    }
-
-    #left-toolbar {
-        width: 60px;
-    }
-
-    #left-toolbar button {
-        width: 40px;
-        height: 35px;
-        font-size: 1em;
-    }
-
-    #left-toolbar input[type="color"] {
-        width: 40px;
-        height: 25px;
     }
 }
 

@@ -35,15 +35,15 @@ class ProjectData {
 
     initNewProject(fps = 24, frameCount = 48) {
         this.projectName = `AnimationXSheet_${new Date().toISOString().slice(0, 10)}`;
-        this.filePath = null;
+        this.filePath = null; 
         this.isModified = false;
-
+        
         // Clear project folder references when creating new project
         this.projectFolderHandle = null;
         this.sceneFolderHandle = null;
         this.audioFolderHandle = null;
         this.projectPath = null;
-
+        
         this.metadata = {
             projectNumber: "", date: new Date().toISOString().slice(0, 10), pageNumber: "1",
             animatorName: "", versionNumber: "1.0", shotNumber: "", fps: parseInt(fps) || 24,
@@ -54,12 +54,12 @@ class ProjectData {
         this.clearAudioData(false);
         this.drawingLayers = [{ name: "foreground", visible: true, objects: [] }];
         this.activeDrawingLayerIndex = 0;
-
+        
         // Dispatch project folder changed event
-        document.dispatchEvent(new CustomEvent('projectFolderChanged', {
-            detail: { projectPath: null }
+        document.dispatchEvent(new CustomEvent('projectFolderChanged', { 
+            detail: { projectPath: null } 
         }));
-
+        
         document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'newProject' } }));
     }
 
@@ -184,11 +184,11 @@ class ProjectData {
         this.sceneFolderHandle = sceneFolderHandle;
         this.audioFolderHandle = audioFolderHandle;
         this.projectPath = projectPath;
-
+        
         console.log(`ProjectData: Project folder set to "${projectPath}"`);
-
-        document.dispatchEvent(new CustomEvent('projectFolderChanged', {
-            detail: { projectPath: this.projectPath }
+        
+        document.dispatchEvent(new CustomEvent('projectFolderChanged', { 
+            detail: { projectPath: this.projectPath } 
         }));
     }
 

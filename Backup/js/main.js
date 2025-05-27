@@ -10,20 +10,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const xsheet = new XSheet(projectData, audioHandler);
 
     const elements = {
-        // Project Management elements
-        btnCreateProject: document.getElementById('btnCreateProject'),
-        btnSetProject: document.getElementById('btnSetProject'),
-        btnReset: document.getElementById('btnReset'),
-        projectStatus: document.getElementById('projectStatus'),
-
-        // Existing elements
         btnImportAudio: document.getElementById('btnImportAudio'),
         fileInputAudio: document.getElementById('fileInputAudio'),
         btnPlay: document.getElementById('btnPlay'),
         btnPause: document.getElementById('btnPause'),
         btnStop: document.getElementById('btnStop'),
-        framesInput: document.getElementById('framesInput'),
-        fpsInput: document.getElementById('fpsInput'),
+        framesInput: document.getElementById('framesInput'), // Check this ID in HTML
+        fpsInput: document.getElementById('fpsInput'),       // Check this ID in HTML
         audioInfoEl: document.getElementById('audioInfo'),
         audioScrubSlider: document.getElementById('audioScrubSlider'),
         metaProjectNumber: document.getElementById('metaProjectNumber'),
@@ -39,7 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     let isSliderDragging = false;
 
-    // Module Initializations
+    // Module Initializations (DrawingTools, DrawingCanvas, ExportHandler, FileHandler)
+    // ... (Ensure these are identical to your last complete version) ...
     if (window.XSheetApp.DrawingTools && typeof window.XSheetApp.DrawingTools.init === 'function') {
         window.XSheetApp.DrawingTools.init(projectData, document.getElementById('left-toolbar'));
     } else { console.error("DrawingTools module not loaded or init function missing."); }
@@ -56,17 +50,14 @@ document.addEventListener('DOMContentLoaded', () => {
         window.XSheetApp.FileHandler.init(projectData, audioHandler, xsheet, elements);
     } else { console.error("FileHandler module not loaded or init function missing."); }
 
-    // NEW: Initialize ProjectManager
-    if (window.XSheetApp.ProjectManager && typeof window.XSheetApp.ProjectManager.init === 'function') {
-        window.XSheetApp.ProjectManager.init(projectData, audioHandler, window.XSheetApp.FileHandler, elements);
-    } else { console.error("ProjectManager module not loaded or init function missing."); }
 
     if (xsheet?.render) { xsheet.render(); } else { console.error("main.js: xsheet.render not available!"); }
 
     function updateUIFromProjectData() {
-        console.log("main.js: updateUIFromProjectData called.");
+        console.log("main.js: updateUIFromProjectData called."); // This is line 59 in your log
 
-        if (elements.framesInput) {
+        // Check elements before accessing .value
+        if (elements.framesInput) { // THIS IS LIKELY AROUND YOUR LINE 53
             elements.framesInput.value = projectData.frameCount;
         } else {
             console.warn("main.js: framesInput element not found in DOM for UI update.");
@@ -83,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 if (projectData.metadata.date) {
                     const d = new Date(projectData.metadata.date);
+                    // Check if date string was valid enough for Date constructor
                     if (d instanceof Date && !isNaN(d)) {
                         elements.metaDate.valueAsDate = d;
                     } else {
@@ -90,32 +82,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         elements.metaDate.value = projectData.metadata.date;
                     }
                 } else {
-                    elements.metaDate.valueAsDate = new Date();
+                    elements.metaDate.valueAsDate = new Date(); // Default to today
                 }
-            } catch (e) {
+            } catch (e) { // Fallback if valueAsDate itself throws or other issues
                 elements.metaDate.value = projectData.metadata.date || new Date().toISOString().slice(0, 10);
                 console.warn("Error setting date input with valueAsDate, used fallback string value:", e);
             }
-        } else if (document.getElementById('metaDate')) {
+        } else if (document.getElementById('metaDate')) { // If elements.metaDate was somehow null but element exists
             document.getElementById('metaDate').valueAsDate = new Date();
         }
+
 
         if (elements.metaPageNumber) elements.metaPageNumber.value = projectData.metadata.pageNumber || "1";
         if (elements.metaAnimatorName) elements.metaAnimatorName.value = projectData.metadata.animatorName || "";
         if (elements.metaVersionNumber) elements.metaVersionNumber.value = projectData.metadata.versionNumber || "1.0";
         if (elements.metaShotNumber) elements.metaShotNumber.value = projectData.metadata.shotNumber || "";
-    }
 
-    // Helper function to check if project folder is set
-    function checkProjectFolderSet(action) {
-        if (!projectData.projectFolderHandle || !projectData.sceneFolderHandle) {
-            const message = `To ${action}, you need to first create or set a project folder.\n\n` +
-                `Click "Create Project" to create a new project folder, or\n` +
-                `Click "Set Project" to select an existing project folder.`;
-            alert(message);
-            return false;
-        }
-        return true;
     }
 
     updateUIFromProjectData();
@@ -124,17 +106,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePlaybackButtonsUI(false);
     if (elements.statusBar) elements.statusBar.textContent = "Status: Ready";
 
-    // Enhanced Audio Import - now supports project-aware importing
-    elements.btnImportAudio?.addEventListener('click', async () => {
-        if (projectData.audioFolderHandle && window.XSheetApp.ProjectManager) {
-            // Use project manager for import
-            await window.XSheetApp.ProjectManager.importAudio();
-        } else {
-            // Fallback to regular file input
-            elements.fileInputAudio?.click();
-        }
-    });
-
+    // Event listeners for UI elements (audio import, playback, frames, fps, scrub)
+    elements.btnImportAudio?.addEventListener('click', () => elements.fileInputAudio?.click());
     elements.fileInputAudio?.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -144,41 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         e.target.value = null;
     });
-
-    // Enhanced Save/Load - now requires project folder to be set
-    elements.btnSaveProject?.addEventListener('click', async () => {
-        if (projectData.sceneFolderHandle && window.XSheetApp.ProjectManager) {
-            // Use project manager for save
-            await window.XSheetApp.ProjectManager.saveScene();
-        } else if (checkProjectFolderSet('save your scene')) {
-            // This won't execute if checkProjectFolderSet returns false
-            // But if it somehow does, fall back to regular file handler
-            if (window.XSheetApp.FileHandler) {
-                await window.XSheetApp.FileHandler.saveProject();
-            }
-        }
-    });
-
-    elements.btnLoadProject?.addEventListener('click', async () => {
-        if (projectData.sceneFolderHandle && window.XSheetApp.ProjectManager) {
-            // Use project manager for load
-            const result = await window.XSheetApp.ProjectManager.loadScene();
-            if (result.success && result.fileName) {
-                updateUIFromProjectData();
-                updateAudioInfo();
-                updateAudioScrubSlider();
-                updatePlaybackButtonsUI(false);
-            }
-        } else if (checkProjectFolderSet('load a scene')) {
-            // This won't execute if checkProjectFolderSet returns false
-            // But if it somehow does, fall back to regular file handler
-            if (window.XSheetApp.FileHandler) {
-                await window.XSheetApp.FileHandler.loadProjectFilePicker();
-            }
-        }
-    });
-
-    // Existing event listeners
     elements.btnPlay?.addEventListener('click', () => {
         const isCurrentlyPlaying = audioHandler.isPlayingContinuous;
         if (elements.btnPlay.textContent.includes('Play')) {
@@ -188,7 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     elements.btnStop?.addEventListener('click', () => audioHandler.stopContinuous());
-
     elements.framesInput?.addEventListener('change', (e) => {
         const newCount = parseInt(e.target.value);
         if (!isNaN(newCount) && newCount >= 1) {
@@ -197,11 +134,10 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.value = projectData.frameCount;
         }
     });
-
     elements.fpsInput?.addEventListener('change', (e) => {
         const newFps = parseInt(e.target.value);
         if (!isNaN(newFps) && newFps > 0 && projectData.metadata.fps !== newFps) {
-            projectData.metadata.fps = newFps;
+            projectData.metadata.fps = newFps; // Consider a setter method in ProjectData for this
             projectData.isModified = true;
             if (elements.statusBar) elements.statusBar.textContent = `Status: FPS set to ${newFps}`;
             document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'fpsChanged' } }));
@@ -209,7 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.value = projectData.metadata.fps;
         }
     });
-
     elements.audioScrubSlider?.addEventListener('mousedown', () => { isSliderDragging = true; });
     elements.audioScrubSlider?.addEventListener('mouseup', () => {
         isSliderDragging = false;
@@ -230,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global Custom Event Listeners
     document.addEventListener('projectDataChanged', (e) => {
         const reason = e.detail?.reason;
+        // console.log(`main.js: 'projectDataChanged' event received, reason: ${reason}`); // Kept for debugging
 
         if (xsheet?.render && (reason === 'frameCount' || reason === 'newProject' || reason === 'projectLoaded' || reason === 'audioCleared' || reason === 'fpsChanged')) {
             xsheet.render();
@@ -248,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (reason === 'frameCount') {
             updateFramesInput();
-            if (projectData.audio.audioBuffer) {
+            if (projectData.audio.audioBuffer) { // If audio exists, its relation to frames might change UI
                 updateAudioScrubSlider();
             }
         } else if (reason === 'fpsChanged') {
@@ -262,21 +198,21 @@ document.addEventListener('DOMContentLoaded', () => {
             updateAudioScrubSlider();
             updatePlaybackButtonsUI(false);
             updateFramesInput();
+        } else if (reason === 'cellData' || reason === 'metadataChanged') { // Assuming you might add 'metadataChanged'
+            // For metadata, updateUIFromProjectData handles it if called
+            // For cellData, usually no specific top-level UI needs update beyond the xsheet itself
         }
     });
 
     document.addEventListener('audioLoaded', (e) => {
         console.log("main.js: audioLoaded event from AudioHandler", e.detail);
+        // UI updates are now mostly driven by 'projectDataChanged'
     });
 
     document.addEventListener('audioMetadataLoaded', (e) => {
-        console.log("main.js: audioMetadataLoaded event", e.detail);
+        console.log("main.js: audioMetadataLoaded event from FileHandler", e.detail);
         if (elements.audioInfoEl && e.detail.filename) {
-            if (e.detail.needsReimport) {
-                elements.audioInfoEl.textContent = `Audio: "${e.detail.filename}" (${e.detail.duration.toFixed(2)}s). Re-import needed.`;
-            } else {
-                elements.audioInfoEl.textContent = `Audio: "${e.detail.filename}" (${e.detail.duration.toFixed(2)}s). Re-import if needed.`;
-            }
+            elements.audioInfoEl.textContent = `Audio: "${e.detail.filename}" (${e.detail.duration.toFixed(2)}s). Re-import if needed.`;
         } else if (elements.audioInfoEl) {
             elements.audioInfoEl.textContent = "No audio loaded";
         }
@@ -289,7 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updatePlaybackButtonsUI(isPlaying);
         if (isPlaying) requestAnimationFrame(animationLoopForPlayback);
     });
-
     document.addEventListener('playbackPositionChanged', (e) => {
         const position = e.detail.position;
         if (projectData.audio.audioBuffer) {
@@ -352,5 +287,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    console.log("Main app with Project Management setup complete.");
+    console.log("Main app setup complete.");
 });

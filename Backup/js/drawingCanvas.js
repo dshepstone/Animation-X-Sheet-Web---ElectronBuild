@@ -58,15 +58,7 @@ window.XSheetApp = window.XSheetApp || {};
             currentToolName = toolsRef.getActiveTool();
         }
         currentCanvas.style.pointerEvents = (currentToolName === "select") ? "none" : "auto";
-
-        // Set cursor based on tool
-        if (currentToolName === "select") {
-            currentCanvas.style.cursor = 'default';
-        } else if (currentToolName === "eraser") {
-            currentCanvas.style.cursor = 'crosshair'; // Could use 'grab' or custom cursor
-        } else {
-            currentCanvas.style.cursor = 'crosshair';
-        }
+        currentCanvas.style.cursor = (currentToolName === "select") ? 'default' : 'crosshair';
 
         const clientWidth = currentXSheetContainer.clientWidth;
         const clientHeight = currentXSheetContainer.clientHeight;
@@ -166,7 +158,6 @@ window.XSheetApp = window.XSheetApp || {};
         if (canvas) {
             canvas.removeEventListener("pointermove", _onPointerMovePen);
             canvas.removeEventListener("pointermove", _onPointerMoveDragShape);
-            canvas.removeEventListener("pointermove", _onPointerMoveEraser);
             if (activePointerId !== null && canvas.hasPointerCapture(activePointerId)) {
                 try { canvas.releasePointerCapture(activePointerId); } catch (err) { /* ignore */ }
             }
@@ -193,30 +184,6 @@ window.XSheetApp = window.XSheetApp || {};
         };
 
         if (tool === "select") return;
-
-        // Handle eraser tool
-        if (tool === "eraser") {
-            const pt = _evtToCanvasWorldSpace(e);
-            const eraserRadius = toolsRef.getActiveLineWidth() * 3; // Make eraser radius proportional to line width
-            if (toolsRef.eraseAtPoint(pt.x, pt.y, eraserRadius)) {
-                _redrawAllObjects();
-            }
-
-            // Set up for continuous erasing
-            activePointerId = e.pointerId;
-            isDrawing = true;
-            try {
-                canvas.setPointerCapture(activePointerId);
-            } catch (err) {
-                console.error("Failed to set pointer capture for eraser:", err);
-                _resetDrawingState(e);
-                isDrawing = false;
-                return;
-            }
-            canvas.addEventListener("pointermove", _onPointerMoveEraser);
-            e.preventDefault();
-            return;
-        }
 
         activePointerId = e.pointerId;
         isDrawing = true;
@@ -259,15 +226,6 @@ window.XSheetApp = window.XSheetApp || {};
         _redrawAllObjects();
     }
 
-    function _onPointerMoveEraser(e) {
-        if (!isDrawing || e.pointerId !== activePointerId || !toolsRef) return;
-        const pt = _evtToCanvasWorldSpace(e);
-        const eraserRadius = toolsRef.getActiveLineWidth() * 3;
-        if (toolsRef.eraseAtPoint(pt.x, pt.y, eraserRadius)) {
-            _redrawAllObjects();
-        }
-    }
-
     function _onPointerUpOrCancel(e) {
         if (!isDrawing || (activePointerId !== null && e.pointerId !== activePointerId && e.type !== "pointercancel" && e.type !== "toolchange_cancel")) {
             if (canvas && e.pointerId && canvas.hasPointerCapture(e.pointerId)) {
@@ -279,12 +237,6 @@ window.XSheetApp = window.XSheetApp || {};
         const objectToCommit = currentDrawingObject;
 
         _resetDrawingState(e);
-
-        // For eraser tool, we don't need to commit anything
-        if (toolsRef && toolsRef.getActiveTool() === "eraser") {
-            currentDrawingObject = null;
-            return;
-        }
 
         if (e.type !== "pointercancel" && e.type !== "toolchange_cancel" && objectToCommit) {
             let isValid = true;
@@ -323,15 +275,11 @@ window.XSheetApp = window.XSheetApp || {};
         if (newTool === "select") {
             currentCanvas.style.pointerEvents = 'none';
             currentCanvas.style.cursor = 'default';
-        } else if (newTool === "eraser") {
-            currentCanvas.style.pointerEvents = 'auto';
-            currentCanvas.style.cursor = 'crosshair'; // Could use 'grab' or custom cursor
         } else {
             currentCanvas.style.pointerEvents = 'auto';
             currentCanvas.style.cursor = 'crosshair';
         }
     }
-
     function _handleDrawingDataChanged(event) { _redrawAllObjects(); }
 
 

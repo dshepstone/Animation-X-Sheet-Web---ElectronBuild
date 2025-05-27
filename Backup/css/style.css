@@ -1,20 +1,19 @@
 /* css/style.css */
 :root {
-    --header-height: 60px;
-    /* Increased for project controls */
+    --header-height: 50px;
     --footer-height: 40px;
-    --left-toolbar-width: 70px;
-    /* Increased slightly for better button sizing */
+    --left-toolbar-width: 60px;
+    /* Adjusted for icons */
     --border-color: #ccc;
     --table-border-color: #999;
+    /* Darker for table itself */
     --highlight-color: #a8d8ff;
+    /* Light blue for row highlight */
     --table-header-bg: #e9e9e9;
     --cell-padding: 3px 5px;
     --row-height: 22px;
     --font-size-main: 13px;
     --font-size-small: 11px;
-    --project-green: #2e7d32;
-    --project-blue: #1976d2;
 }
 
 * {
@@ -50,55 +49,6 @@ body {
     gap: 10px;
     height: var(--header-height);
     flex-shrink: 0;
-    flex-wrap: wrap;
-}
-
-/* Project Management Controls */
-.project-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    border: 1px solid var(--project-blue);
-    border-radius: 4px;
-    background-color: #f8f9ff;
-}
-
-.project-controls button {
-    padding: 4px 8px;
-    font-size: 11px;
-    border-radius: 3px;
-    border: 1px solid var(--project-blue);
-    background-color: white;
-    color: var(--project-blue);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.project-controls button:hover {
-    background-color: var(--project-blue);
-    color: white;
-}
-
-.project-controls button:active {
-    transform: translateY(1px);
-}
-
-#projectStatus {
-    font-size: 11px;
-    font-weight: 500;
-    margin-left: 8px;
-    white-space: nowrap;
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.divider {
-    width: 1px;
-    height: 24px;
-    background-color: var(--border-color);
-    margin: 0 4px;
 }
 
 .app-header label {
@@ -113,7 +63,7 @@ body {
     font-size: var(--font-size-small);
 }
 
-.app-header button:not(.project-controls button) {
+.app-header button {
     padding: 5px 10px;
     font-size: var(--font-size-small);
 }
@@ -132,6 +82,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 5px;
+    /* Reduced gap */
     align-items: center;
     overflow-y: auto;
     flex-shrink: 0;
@@ -146,53 +97,23 @@ body {
 }
 
 #left-toolbar button {
-    width: 45px;
+    width: 40px;
     height: 40px;
     padding: 0;
-    font-size: 1.2em;
+    font-size: 1.4em;
     border-radius: 4px;
-    border: 1px solid #ccc;
-    background-color: white;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-#left-toolbar button:hover {
-    background-color: #e8e8e8;
-    border-color: #999;
 }
 
 #left-toolbar button.active-tool {
     background-color: #4CAF50;
     color: white;
-    border-color: #388E3C;
-}
-
-#left-toolbar button.active-tool:hover {
-    background-color: #388E3C;
-}
-
-/* Special styling for clear drawings button */
-#btnClearAllDrawings {
-    background-color: #ffebee !important;
-    border-color: #f44336 !important;
-    color: #d32f2f !important;
-}
-
-#btnClearAllDrawings:hover {
-    background-color: #f44336 !important;
-    color: white !important;
 }
 
 #left-toolbar input[type="color"] {
-    width: 45px;
+    width: 40px;
     height: 30px;
     padding: 2px;
     border: 1px solid var(--border-color);
-    cursor: pointer;
 }
 
 #left-toolbar label {
@@ -200,7 +121,6 @@ body {
     margin-top: 8px;
     display: block;
     text-align: center;
-    width: 100%;
 }
 
 #left-toolbar select {
@@ -216,6 +136,7 @@ body {
     border: 0;
     border-top: 1px solid #ddd;
 }
+
 
 #xsheet-and-metadata-section {
     flex-grow: 1;
@@ -262,10 +183,12 @@ body {
     flex-grow: 0;
 }
 
+
 #xsheet-container {
     flex-grow: 1;
     overflow: auto;
     position: relative;
+    /* For positioning overlay canvases */
     border: 1px solid var(--table-border-color);
     background-color: #fff;
 }
@@ -281,6 +204,7 @@ body {
     position: sticky;
     top: 0;
     z-index: 10;
+    /* Above table body and simple overlays */
     background-color: var(--table-header-bg);
 }
 
@@ -289,8 +213,10 @@ body {
     border: 1px solid var(--table-border-color);
     padding: var(--cell-padding);
     vertical-align: top;
+    /* Align content to the top of cells */
     height: var(--row-height);
     line-height: calc(var(--row-height) - 2 * 3px - 2px);
+    /* Attempt to vertically center single line text */
     box-sizing: border-box;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -316,6 +242,7 @@ body {
 .waveform-col {
     width: 10%;
     padding: 0 !important;
+    /* Remove padding for canvas */
 }
 
 .dialogue-col {
@@ -367,11 +294,15 @@ body {
     background-color: #c8e6c9;
 }
 
+/* Light green for first frame numbers */
+
+
 #xsheetTable td[contenteditable="true"] {
     white-space: pre-wrap;
     min-height: var(--row-height);
 }
 
+/* Allow wrapping */
 #xsheetTable td[contenteditable="true"]:focus {
     outline: 1px solid blue;
     background-color: #e6f7ff;
@@ -388,17 +319,15 @@ body {
     position: absolute;
     pointer-events: auto;
     z-index: 5;
+    /* Above cell background, below text potentially */
 }
 
 #drawingCanvasOverlay {
     position: absolute;
     pointer-events: none;
+    /* Managed by drawing tool state */
     z-index: 20;
-}
-
-/* Special cursor for eraser tool */
-#drawingCanvasOverlay[data-tool="eraser"] {
-    cursor: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTAgNEwyMCAxNEwxMiAyMkwxMCAyMEwyIDEyTDEwIDRMMTIgMloiIGZpbGw9IiNmZmYiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLXdpZHRoPSIyIi8+Cjwvc3ZnPgo=') 12 12, crosshair;
+    /* Above waveform and table content */
 }
 
 .app-footer {
@@ -483,75 +412,21 @@ body {
     background-color: #f9f9f9;
 }
 
-/* Responsive adjustments for project controls */
-@media (max-width: 1200px) {
-    .app-header {
-        flex-wrap: wrap;
-        height: auto;
-        min-height: var(--header-height);
-        padding: 8px 5px;
-        gap: 6px;
-    }
-
-    .project-controls {
-        order: -1;
-        width: 100%;
-        justify-content: flex-start;
-        margin-bottom: 4px;
-    }
-
-    #projectStatus {
-        max-width: 150px;
-    }
-}
-
-@media (max-width: 800px) {
-    .project-controls button {
-        padding: 3px 6px;
-        font-size: 10px;
-    }
-
-    #projectStatus {
-        font-size: 10px;
-        max-width: 120px;
-    }
-
-    .app-header button:not(.project-controls button) {
-        padding: 4px 8px;
-        font-size: 11px;
-    }
-
-    .app-header input[type="number"] {
-        width: 50px;
-    }
-
-    #left-toolbar {
-        width: 60px;
-    }
-
-    #left-toolbar button {
-        width: 40px;
-        height: 35px;
-        font-size: 1em;
-    }
-
-    #left-toolbar input[type="color"] {
-        width: 40px;
-        height: 25px;
-    }
-}
-
 /* Enhanced print styles for the new export approach */
 @media print {
+
+    /* Hide everything by default */
     body * {
         visibility: hidden;
     }
 
+    /* Show only export container content during print */
     #export-container,
     #export-container * {
         visibility: visible;
     }
 
+    /* Position export container for print */
     #export-container {
         position: absolute !important;
         left: 0 !important;
@@ -563,6 +438,7 @@ body {
         font-size: 10pt !important;
     }
 
+    /* Ensure table prints properly */
     #export-container table {
         page-break-inside: auto;
         border-collapse: collapse !important;
@@ -590,17 +466,20 @@ body {
         font-size: 8pt !important;
     }
 
+    /* Ensure canvases print */
     #export-container canvas {
         display: block !important;
         position: absolute !important;
         image-rendering: crisp-edges !important;
     }
 
+    /* Page settings */
     @page {
         size: letter portrait;
         margin: 0.4in;
     }
 
+    /* Color adjustments for print */
     #export-container .frame-col {
         background-color: #f5f5f5 !important;
     }
