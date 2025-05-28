@@ -511,6 +511,27 @@ window.XSheetApp.ExportHandler = {
         return finalFileName;
     },
 
+    // NEW: Add page numbers to multi-page PDFs
+    _addPageNumber: function(pdf, currentPage, totalPages, marginPt, pageWidthPt, pageHeightPt) {
+        // Only add page numbers if there are multiple pages
+        if (totalPages <= 1) return;
+        
+        pdf.setFontSize(10);
+        pdf.setTextColor(100, 100, 100); // Gray color
+        
+        const pageText = `Page ${currentPage} of ${totalPages}`;
+        const textWidth = pdf.getTextWidth(pageText);
+        
+        // Position at bottom center of page
+        const xPos = (pageWidthPt - textWidth) / 2;
+        const yPos = pageHeightPt - (marginPt / 2); // Half margin from bottom
+        
+        pdf.text(pageText, xPos, yPos);
+        
+        // Reset text color to black for any subsequent text
+        pdf.setTextColor(0, 0, 0);
+    },
+
     async exportToPDF() {
         const statusBar = document.getElementById('statusBar');
         if (this.isExporting) { statusBar.textContent = "Status: Export already in progress."; return; }
@@ -592,20 +613,6 @@ window.XSheetApp.ExportHandler = {
                 throw new Error("html2canvas returned a zero-dimension canvas.");
             }
 
-            // // --- TEMPORARY: VISUALIZE CAPTURED CANVAS ---
-            // const tempImg = document.createElement('img');
-            // tempImg.src = pageCanvas.toDataURL();
-            // Object.assign(tempImg.style, {
-            //     position: 'fixed', top: '0', left: '0', zIndex: '30000',
-            //     width: 'auto', maxWidth: '90%', maxHeight: '90vh', 
-            //     border: '3px solid blue', overflow: 'auto', backgroundColor: 'white'
-            // });
-            // document.body.appendChild(tempImg);
-            // tempImg.onclick = () => tempImg.remove();
-            // // this.isExporting = false; 
-            // // return; 
-            // // --- END TEMPORARY ---
-
             statusBar.textContent = "Status: Generating PDF...";
             const imgData = pageCanvas.toDataURL('image/png');
             const pageCanvasRenderedWidthPt = pageCanvas.width * 72 / 96;
@@ -622,23 +629,31 @@ window.XSheetApp.ExportHandler = {
             const pdf = new jspdf.jsPDF({ orientation: pdfOrientation, unit: 'pt', format: 'letter' });
 
             const scaleToFitPdfPageWidth = pdfPrintableWidthPt / pageCanvasRenderedWidthPt;
-
             const finalPdfImageWidthPt = pageCanvasRenderedWidthPt * scaleToFitPdfPageWidth;
             const finalPdfImageTotalHeightPt = pageCanvasRenderedHeightPt * scaleToFitPdfPageWidth;
+
+            // Calculate total pages and page dimensions for numbering
+            const totalPages = Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt);
+            const pageWidthPt = pdfOrientation === 'landscape' ? letterHeightPt : letterWidthPt;
+            const pageHeightPt = pdfOrientation === 'landscape' ? letterWidthPt : letterHeightPt;
 
             // console.log(`PDF Image: Final W=${finalPdfImageWidthPt.toFixed(0)}pt, Total H=${finalPdfImageTotalHeightPt.toFixed(0)}pt (Scale for PDF: ${scaleToFitPdfPageWidth.toFixed(3)})`);
 
             if (finalPdfImageTotalHeightPt <= pdfPrintableHeightPt) {
+                // Single page
                 const xOffset = marginPt;
                 const yOffset = marginPt + (pdfPrintableHeightPt - finalPdfImageTotalHeightPt) / 2;
                 pdf.addImage(imgData, 'PNG', xOffset, yOffset, finalPdfImageWidthPt, finalPdfImageTotalHeightPt);
+                
+                // Add page number (will only show if totalPages > 1, which won't happen here, but keeping consistent)
+                this._addPageNumber(pdf, 1, totalPages, marginPt, pageWidthPt, pageHeightPt);
             } else {
-                const numPages = Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt);
-                // console.log(`PDF: Multi-page PDF needed: ${numPages} pages.`);
+                // Multi-page PDF with page numbers
+                // console.log(`PDF: Multi-page PDF needed: ${totalPages} pages.`);
                 let sourceY_on_pageCanvas_px = 0;
                 const onePdfPageHeight_on_pageCanvas_px = (pdfPrintableHeightPt / finalPdfImageTotalHeightPt) * pageCanvas.height;
 
-                for (let i = 0; i < numPages; i++) {
+                for (let i = 0; i < totalPages; i++) {
                     if (i > 0) { pdf.addPage(); }
 
                     const segmentSourceHeightPx = Math.min(onePdfPageHeight_on_pageCanvas_px, pageCanvas.height - sourceY_on_pageCanvas_px);
@@ -654,11 +669,15 @@ window.XSheetApp.ExportHandler = {
                     const segmentDisplayHeightPt = segmentSourceHeightPx * (finalPdfImageWidthPt / pageCanvas.width);
 
                     pdf.addImage(segmentImgData, 'PNG', marginPt, marginPt, finalPdfImageWidthPt, segmentDisplayHeightPt);
+                    
+                    // NEW: Add page number to this page
+                    this._addPageNumber(pdf, i + 1, totalPages, marginPt, pageWidthPt, pageHeightPt);
+                    
                     sourceY_on_pageCanvas_px += segmentSourceHeightPx;
                 }
             }
 
-            // UPDATED: Save to project exports folder with versioning or fall back to download
+            // Save to project exports folder with versioning or fall back to download
             const date = new Date().toISOString().slice(0, 10);
             const projectName = this.projectData.projectName || 'AnimationXSheet';
             const baseFilename = `${projectName}_${date}_${pdfOrientation}.pdf`;
@@ -680,7 +699,7 @@ window.XSheetApp.ExportHandler = {
                     await writable.write(pdfBlob);
                     await writable.close();
 
-                    const pageInfo = finalPdfImageTotalHeightPt > pdfPrintableHeightPt ? `, ${Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt)} pages` : ', single page';
+                    const pageInfo = totalPages > 1 ? `, ${totalPages} pages` : ', single page';
                     statusBar.textContent = `Status: PDF saved to project exports folder - ${versionedFilename}${pageInfo}`;
 
                     console.log(`ExportHandler: PDF saved to project exports folder as ${versionedFilename}`);
@@ -688,14 +707,14 @@ window.XSheetApp.ExportHandler = {
                     console.warn("ExportHandler: Failed to save to project folder, falling back to download:", projectSaveError);
                     // Fallback to regular download
                     pdf.save(baseFilename);
-                    const pageInfo = finalPdfImageTotalHeightPt > pdfPrintableHeightPt ? `, ${Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt)} pages` : ', single page';
+                    const pageInfo = totalPages > 1 ? `, ${totalPages} pages` : ', single page';
                     statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}`;
                 }
             } else {
                 // No project folder or API not supported - use regular download
                 console.log("ExportHandler: No project exports folder, using regular download");
                 pdf.save(baseFilename);
-                const pageInfo = finalPdfImageTotalHeightPt > pdfPrintableHeightPt ? `, ${Math.ceil(finalPdfImageTotalHeightPt / pdfPrintableHeightPt)} pages` : ', single page';
+                const pageInfo = totalPages > 1 ? `, ${totalPages} pages` : ', single page';
                 statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}`;
             }
 
