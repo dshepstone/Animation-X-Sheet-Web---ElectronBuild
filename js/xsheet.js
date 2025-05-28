@@ -23,6 +23,8 @@ class XSheet {
         this.verticalWaveformCtx = null;
         this.isScrubbingVerticalWaveform = false;
         this.currentFrameHighlight = -1;
+        this.activeWaveformPointerId = null; // Track active pointer for waveform scrubbing
+        this.waveformPointerType = 'mouse'; // Track pointer type for waveform
 
         if (!this.tableBody || !this.tableHead || !this.xsheetContainer) {
             console.error("CRITICAL XSheet ERROR: Essential DOM elements not found!");
@@ -82,11 +84,15 @@ class XSheet {
         this.verticalWaveformCanvas.style.position = 'absolute';
         this.verticalWaveformCanvas.style.pointerEvents = 'auto';
         this.verticalWaveformCanvas.style.zIndex = '5';
+        this.verticalWaveformCanvas.style.touchAction = 'none'; // Prevent default touch behaviors
         this.xsheetContainer.appendChild(this.verticalWaveformCanvas);
         this.verticalWaveformCtx = this.verticalWaveformCanvas.getContext('2d');
-        this.verticalWaveformCanvas.addEventListener('mousedown', this._handleVerticalWaveformMouseDown.bind(this));
-        document.addEventListener('mousemove', this._handleVerticalWaveformMouseMove.bind(this));
-        document.addEventListener('mouseup', this._handleVerticalWaveformMouseUp.bind(this));
+        
+        // Use pointer events instead of mouse events for better pen/touch support
+        this.verticalWaveformCanvas.addEventListener('pointerdown', this._handleVerticalWaveformPointerDown.bind(this));
+        document.addEventListener('pointermove', this._handleVerticalWaveformPointerMove.bind(this));
+        document.addEventListener('pointerup', this._handleVerticalWaveformPointerUp.bind(this));
+        document.addEventListener('pointercancel', this._handleVerticalWaveformPointerUp.bind(this));
     }
 
     _getWaveformColumnMetrics() {
@@ -136,6 +142,18 @@ class XSheet {
         if (this.verticalWaveformCanvas.height !== this.xsheetContainer.clientHeight) {
             this.verticalWaveformCanvas.height = this.xsheetContainer.clientHeight;
         }
+        
+        // Update cursor based on pointer type and whether we have audio
+        if (this.projectData?.audio?.audioBuffer && this.projectData.audio.duration > 0) {
+            if (this.waveformPointerType === 'pen') {
+                this.verticalWaveformCanvas.style.cursor = 'crosshair';
+            } else {
+                this.verticalWaveformCanvas.style.cursor = 'ew-resize';
+            }
+        } else {
+            this.verticalWaveformCanvas.style.cursor = 'default';
+        }
+
         const ctx = this.verticalWaveformCtx;
         ctx.clearRect(0, 0, this.verticalWaveformCanvas.width, this.verticalWaveformCanvas.height);
         const audioDuration = this.projectData.audio.duration;
@@ -207,44 +225,123 @@ class XSheet {
         return Math.max(0, Math.min(time, audioDuration));
     }
 
-    _handleVerticalWaveformMouseDown(event) {
-        if (!this.projectData?.audio?.audioBuffer || this.projectData.audio.duration === 0 || !this.verticalWaveformCanvas) return;
+    _getPointerPositionOnCanvas(event) {
+        if (!this.verticalWaveformCanvas) return null;
         const canvasRect = this.verticalWaveformCanvas.getBoundingClientRect();
-        if (event.clientX < canvasRect.left || event.clientX > canvasRect.right || event.clientY < canvasRect.top || event.clientY > canvasRect.bottom) return;
-        this.isScrubbingVerticalWaveform = true; document.body.style.userSelect = 'none';
-        const time = this._yPosToAudioTime(event.offsetY);
-        this.projectData.audio.currentTime = time;
-        if (this.audioHandler) this.audioHandler.playScrubSnippet(time, 1.0 / (this.projectData.metadata.fps || 24));
-        document.dispatchEvent(new CustomEvent('playbackPositionChanged', { detail: { position: time } }));
+        
+        // Check if pointer is within canvas bounds
+        if (event.clientX < canvasRect.left || event.clientX > canvasRect.right || 
+            event.clientY < canvasRect.top || event.clientY > canvasRect.bottom) {
+            return null;
+        }
+        
+        return {
+            x: event.clientX - canvasRect.left,
+            y: event.clientY - canvasRect.top
+        };
     }
 
-    _handleVerticalWaveformMouseMove(event) {
-        if (!this.isScrubbingVerticalWaveform || !this.projectData?.audio?.audioBuffer || !this.verticalWaveformCanvas) return;
+    _handleVerticalWaveformPointerDown(event) {
+        if (!this.projectData?.audio?.audioBuffer || this.projectData.audio.duration === 0 || !this.verticalWaveformCanvas) return;
+        
+        // Only handle primary pointer (left mouse button, pen contact, or primary touch)
+        if (event.button !== 0 && event.button !== undefined) return;
+        
+        const canvasPos = this._getPointerPositionOnCanvas(event);
+        if (!canvasPos) return;
+        
+        // Enhanced palm rejection for pen input
+        if (event.pointerType === 'pen' && event.width && event.height) {
+            const contactArea = event.width * event.height;
+            if (contactArea > 400) { // Adjust threshold as needed
+                console.log("XSheet: Large contact area detected on waveform, possibly palm - ignoring");
+                return;
+            }
+        }
+        
+        this.isScrubbingVerticalWaveform = true;
+        this.activeWaveformPointerId = event.pointerId;
+        this.waveformPointerType = event.pointerType || 'mouse';
+        document.body.style.userSelect = 'none';
+        
+        // Capture the pointer to ensure we get move and up events
+        try {
+            this.verticalWaveformCanvas.setPointerCapture(event.pointerId);
+        } catch (err) {
+            console.warn("Failed to capture pointer for waveform scrubbing:", err);
+        }
+        
+        const time = this._yPosToAudioTime(canvasPos.y);
+        this.projectData.audio.currentTime = time;
+        
+        if (this.audioHandler) {
+            const fps = this.projectData.metadata.fps || 24;
+            this.audioHandler.playScrubSnippet(time, 1.0 / fps);
+        }
+        
+        document.dispatchEvent(new CustomEvent('playbackPositionChanged', { detail: { position: time } }));
+        event.preventDefault();
+    }
+
+    _handleVerticalWaveformPointerMove(event) {
+        if (!this.isScrubbingVerticalWaveform || 
+            event.pointerId !== this.activeWaveformPointerId || 
+            !this.projectData?.audio?.audioBuffer || 
+            !this.verticalWaveformCanvas) return;
+        
         const canvasRect = this.verticalWaveformCanvas.getBoundingClientRect();
         const canvasY = event.clientY - canvasRect.top;
         const clampedCanvasY = Math.max(0, Math.min(canvasY, this.verticalWaveformCanvas.height));
         const time = this._yPosToAudioTime(clampedCanvasY);
         const fps = this.projectData.metadata.fps || 24;
+        
         this.projectData.audio.currentTime = time;
         document.dispatchEvent(new CustomEvent('playbackPositionChanged', { detail: { position: time, visualOnly: true } }));
+        
+        // Throttle audio scrubbing for smoother performance
         if (this.isScrubbingVerticalWaveform && Math.abs(time - (this.projectData.lastScrubPlayTime || 0)) > (0.7 / fps)) {
             if (this.audioHandler) this.audioHandler.playScrubSnippet(time, 1.0 / fps);
             this.projectData.lastScrubPlayTime = time;
         }
+        
+        event.preventDefault();
     }
 
-    _handleVerticalWaveformMouseUp(event) {
-        if (this.isScrubbingVerticalWaveform) {
-            this.isScrubbingVerticalWaveform = false; document.body.style.userSelect = '';
-            if (!this.projectData?.audio?.audioBuffer) return;
-            const canvasRect = this.verticalWaveformCanvas.getBoundingClientRect();
-            const canvasY = event.clientY - canvasRect.top;
-            const clampedCanvasY = Math.max(0, Math.min(canvasY, this.verticalWaveformCanvas.height));
-            const time = this._yPosToAudioTime(clampedCanvasY);
-            this.projectData.audio.currentTime = time;
-            if (this.audioHandler) this.audioHandler.playScrubSnippet(time, 1.0 / (this.projectData.metadata.fps || 24));
-            document.dispatchEvent(new CustomEvent('playbackPositionChanged', { detail: { position: time } }));
+    _handleVerticalWaveformPointerUp(event) {
+        if (!this.isScrubbingVerticalWaveform || 
+            (this.activeWaveformPointerId !== null && event.pointerId !== this.activeWaveformPointerId)) {
+            return;
         }
+        
+        this.isScrubbingVerticalWaveform = false;
+        this.activeWaveformPointerId = null;
+        document.body.style.userSelect = '';
+        
+        // Release pointer capture
+        if (this.verticalWaveformCanvas && event.pointerId !== undefined) {
+            try {
+                this.verticalWaveformCanvas.releasePointerCapture(event.pointerId);
+            } catch (err) {
+                // Ignore errors - pointer might already be released
+            }
+        }
+        
+        if (!this.projectData?.audio?.audioBuffer) return;
+        
+        // Final scrub play on release
+        const canvasRect = this.verticalWaveformCanvas.getBoundingClientRect();
+        const canvasY = event.clientY - canvasRect.top;
+        const clampedCanvasY = Math.max(0, Math.min(canvasY, this.verticalWaveformCanvas.height));
+        const time = this._yPosToAudioTime(clampedCanvasY);
+        
+        this.projectData.audio.currentTime = time;
+        
+        if (this.audioHandler) {
+            const fps = this.projectData.metadata.fps || 24;
+            this.audioHandler.playScrubSnippet(time, 1.0 / fps);
+        }
+        
+        document.dispatchEvent(new CustomEvent('playbackPositionChanged', { detail: { position: time } }));
     }
 
     highlightFrame(frameIndex) {

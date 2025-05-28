@@ -13,6 +13,9 @@ window.XSheetApp = window.XSheetApp || {};
     let isExportPrepared = false;
     let originalCanvasState = {};
     let activePointerId = null;
+    let pointerType = 'mouse'; // Track pointer type: 'mouse', 'pen', 'touch'
+    let isPenHovering = false;
+    let lastPressure = 0.5; // Default pressure for mouse input
 
     let _hLock_syncScrollTransforms = function () { };
 
@@ -59,11 +62,14 @@ window.XSheetApp = window.XSheetApp || {};
         }
         currentCanvas.style.pointerEvents = (currentToolName === "select") ? "none" : "auto";
 
-        // Set cursor based on tool
+        // Enhanced cursor based on tool and pointer type
         if (currentToolName === "select") {
             currentCanvas.style.cursor = 'default';
         } else if (currentToolName === "eraser") {
-            currentCanvas.style.cursor = 'crosshair'; // Could use 'grab' or custom cursor
+            currentCanvas.style.cursor = 'crosshair';
+        } else if (pointerType === 'pen') {
+            // Special cursor for pen input to indicate precision mode
+            currentCanvas.style.cursor = 'crosshair';
         } else {
             currentCanvas.style.cursor = 'crosshair';
         }
@@ -91,12 +97,21 @@ window.XSheetApp = window.XSheetApp || {};
         };
     }
 
+    function _getEffectiveLineWidth(baseWidth, pressure) {
+        // Apply pressure sensitivity for pen input
+        if (pointerType === 'pen' && pressure > 0) {
+            // Scale width based on pressure (0.3 to 1.5 multiplier range)
+            const pressureMultiplier = Math.max(0.3, Math.min(1.5, 0.5 + pressure));
+            return Math.max(1, Math.round(baseWidth * pressureMultiplier));
+        }
+        return baseWidth;
+    }
+
     function _drawObject(objToDraw, drawingContext, isForExport) {
         if (!objToDraw?.style || !objToDraw.points || !drawingContext) return;
         // Allow drawing shapes even with only one point during drag (for preview)
         if (objToDraw.points.length === 0 && (objToDraw.tool === 'pen' || objToDraw.tool === 'line')) return;
         if (objToDraw.points.length < 1 && (objToDraw.tool === 'rectangle' || objToDraw.tool === 'ellipse')) return;
-
 
         drawingContext.save();
 
@@ -108,39 +123,61 @@ window.XSheetApp = window.XSheetApp || {};
         }
 
         drawingContext.strokeStyle = objToDraw.style.color;
-        drawingContext.lineWidth = objToDraw.style.width;
         drawingContext.lineCap = "round";
         drawingContext.lineJoin = "round";
 
-        drawingContext.beginPath();
-
-        const firstPoint = objToDraw.points[0];
-        // For pen and line, we need moveTo. For rect/ellipse, their methods handle path creation.
-        if (objToDraw.tool === "pen" || objToDraw.tool === "line") {
-            if (!firstPoint) { drawingContext.restore(); return; } // Should have points
-            drawingContext.moveTo(firstPoint.x, firstPoint.y);
-        }
-
-        if (objToDraw.tool === "pen") {
-            for (let i = 1; i < objToDraw.points.length; i++) drawingContext.lineTo(objToDraw.points[i].x, objToDraw.points[i].y);
-        } else if (objToDraw.tool === "line" && objToDraw.points.length >= 2) {
-            drawingContext.lineTo(objToDraw.points[1].x, objToDraw.points[1].y);
-        } else if (objToDraw.tool === "rectangle" && objToDraw.points.length >= 2) {
-            const p0 = objToDraw.points[0]; const p1 = objToDraw.points[1];
-            drawingContext.rect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
-        } else if (objToDraw.tool === "ellipse" && objToDraw.points.length >= 2) {
-            const p0 = objToDraw.points[0]; const p1 = objToDraw.points[1];
-            if (p0 && p1) {
-                drawingContext.ellipse(
-                    (p0.x + p1.x) / 2,
-                    (p0.y + p1.y) / 2,
-                    Math.abs(p1.x - p0.x) / 2,
-                    Math.abs(p1.y - p0.y) / 2,
-                    0, 0, Math.PI * 2
-                );
+        // Handle pressure-sensitive drawing for pen strokes
+        if (objToDraw.tool === "pen" && objToDraw.points.length > 1 && objToDraw.points.some(p => p.pressure !== undefined)) {
+            // Draw pressure-sensitive pen stroke with varying width
+            for (let i = 1; i < objToDraw.points.length; i++) {
+                const prevPoint = objToDraw.points[i - 1];
+                const currentPoint = objToDraw.points[i];
+                
+                const prevPressure = prevPoint.pressure || 0.5;
+                const currentPressure = currentPoint.pressure || 0.5;
+                const avgPressure = (prevPressure + currentPressure) / 2;
+                
+                drawingContext.lineWidth = _getEffectiveLineWidth(objToDraw.style.width, avgPressure);
+                drawingContext.beginPath();
+                drawingContext.moveTo(prevPoint.x, prevPoint.y);
+                drawingContext.lineTo(currentPoint.x, currentPoint.y);
+                drawingContext.stroke();
             }
+        } else {
+            // Standard drawing for non-pressure-sensitive input
+            drawingContext.lineWidth = objToDraw.style.width;
+            drawingContext.beginPath();
+
+            const firstPoint = objToDraw.points[0];
+            // For pen and line, we need moveTo. For rect/ellipse, their methods handle path creation.
+            if (objToDraw.tool === "pen" || objToDraw.tool === "line") {
+                if (!firstPoint) { drawingContext.restore(); return; } // Should have points
+                drawingContext.moveTo(firstPoint.x, firstPoint.y);
+            }
+
+            if (objToDraw.tool === "pen") {
+                for (let i = 1; i < objToDraw.points.length; i++) {
+                    drawingContext.lineTo(objToDraw.points[i].x, objToDraw.points[i].y);
+                }
+            } else if (objToDraw.tool === "line" && objToDraw.points.length >= 2) {
+                drawingContext.lineTo(objToDraw.points[1].x, objToDraw.points[1].y);
+            } else if (objToDraw.tool === "rectangle" && objToDraw.points.length >= 2) {
+                const p0 = objToDraw.points[0]; const p1 = objToDraw.points[1];
+                drawingContext.rect(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+            } else if (objToDraw.tool === "ellipse" && objToDraw.points.length >= 2) {
+                const p0 = objToDraw.points[0]; const p1 = objToDraw.points[1];
+                if (p0 && p1) {
+                    drawingContext.ellipse(
+                        (p0.x + p1.x) / 2,
+                        (p0.y + p1.y) / 2,
+                        Math.abs(p1.x - p0.x) / 2,
+                        Math.abs(p1.y - p0.y) / 2,
+                        0, 0, Math.PI * 2
+                    );
+                }
+            }
+            drawingContext.stroke();
         }
-        drawingContext.stroke();
         drawingContext.restore();
     }
 
@@ -160,6 +197,23 @@ window.XSheetApp = window.XSheetApp || {};
         if (currentDrawingObject) {
             _drawObject(currentDrawingObject, currentCtx, isExportPrepared);
         }
+
+        // Draw pen hover preview if hovering
+        if (isPenHovering && pointerType === 'pen' && toolsRef) {
+            const tool = toolsRef.getActiveTool();
+            if (tool !== "select" && tool !== "eraser") {
+                // Draw a subtle preview circle at hover position
+                currentCtx.save();
+                const { xsheetContainer: currentXSheetContainer } = _getCanvasAndContainer();
+                const scrollX = currentXSheetContainer?.scrollLeft || 0;
+                const scrollY = currentXSheetContainer?.scrollTop || 0;
+                currentCtx.translate(-scrollX, -scrollY);
+                
+                // This would need the hover position, which we'd track separately
+                // For now, just indicate that hover preview is possible
+                currentCtx.restore();
+            }
+        }
     }
 
     function _resetDrawingState(e) {
@@ -173,11 +227,29 @@ window.XSheetApp = window.XSheetApp || {};
         }
         isDrawing = false;
         activePointerId = null;
+        isPenHovering = false;
         // currentDrawingObject is handled by the calling function (_onPointerUpOrCancel or _handleToolChange)
     }
 
     function _onPointerDown(e) {
-        if (!toolsRef || !canvas || e.button !== 0) return;
+        if (!toolsRef || !canvas) return;
+
+        // Handle only primary button (left mouse button, pen contact, or primary touch)
+        if (e.button !== 0 && e.button !== undefined) return;
+
+        // Update pointer type and pressure
+        pointerType = e.pointerType || 'mouse';
+        lastPressure = e.pressure || 0.5;
+
+        // Enhanced palm rejection for pen input
+        if (pointerType === 'pen' && e.width && e.height) {
+            // If the contact area is very large, it might be a palm
+            const contactArea = e.width * e.height;
+            if (contactArea > 400) { // Adjust threshold as needed
+                console.log("DrawingCanvas: Large contact area detected, possibly palm - ignoring");
+                return;
+            }
+        }
 
         if (isDrawing) {
             console.warn("PointerDown called while isDrawing was true. Resetting.");
@@ -220,8 +292,14 @@ window.XSheetApp = window.XSheetApp || {};
 
         activePointerId = e.pointerId;
         isDrawing = true;
+        isPenHovering = false; // Clear hover state when starting to draw
 
         const pt = _evtToCanvasWorldSpace(e);
+        // Add pressure information to the point for pen input
+        if (pointerType === 'pen') {
+            pt.pressure = e.pressure || 0.5;
+        }
+
         currentDrawingObject = makeObject(tool, style);
         currentDrawingObject.points.push(pt);
 
@@ -246,14 +324,28 @@ window.XSheetApp = window.XSheetApp || {};
 
     function _onPointerMovePen(e) {
         if (!isDrawing || !currentDrawingObject || e.pointerId !== activePointerId) return;
+        
         const pt = _evtToCanvasWorldSpace(e);
+        // Add pressure information for pen input
+        if (pointerType === 'pen') {
+            pt.pressure = e.pressure || lastPressure;
+            lastPressure = pt.pressure;
+        }
+        
         currentDrawingObject.points.push(pt);
         _redrawAllObjects();
     }
 
     function _onPointerMoveDragShape(e) {
         if (!isDrawing || !currentDrawingObject || e.pointerId !== activePointerId) return;
+        
         const pt = _evtToCanvasWorldSpace(e);
+        // Add pressure information for pen input
+        if (pointerType === 'pen') {
+            pt.pressure = e.pressure || lastPressure;
+            lastPressure = pt.pressure;
+        }
+        
         if (currentDrawingObject.points.length === 1) currentDrawingObject.points.push(pt);
         else if (currentDrawingObject.points.length >= 2) currentDrawingObject.points[1] = pt;
         _redrawAllObjects();
@@ -265,6 +357,31 @@ window.XSheetApp = window.XSheetApp || {};
         const eraserRadius = toolsRef.getActiveLineWidth() * 3;
         if (toolsRef.eraseAtPoint(pt.x, pt.y, eraserRadius)) {
             _redrawAllObjects();
+        }
+    }
+
+    // New: Handle pen hover events for preview
+    function _onPointerEnter(e) {
+        if (e.pointerType === 'pen' && !isDrawing) {
+            pointerType = 'pen';
+            isPenHovering = true;
+            _setCanvasStyleForScreen(); // Update cursor for pen
+        }
+    }
+
+    function _onPointerLeave(e) {
+        if (e.pointerType === 'pen') {
+            isPenHovering = false;
+            _redrawAllObjects(); // Clear any hover preview
+        }
+    }
+
+    function _onPointerMove(e) {
+        // Handle hover for pen input when not drawing
+        if (e.pointerType === 'pen' && !isDrawing) {
+            pointerType = 'pen';
+            isPenHovering = true;
+            // Could add hover preview logic here
         }
     }
 
@@ -318,22 +435,27 @@ window.XSheetApp = window.XSheetApp || {};
             currentDrawingObject = null; // Ensure it's cleared after cancel simulation
         }
 
-        const { canvas: currentCanvas } = _getCanvasAndContainer(); if (!currentCanvas) return;
+        const { canvas: currentCanvas } = _getCanvasAndContainer(); 
+        if (!currentCanvas) return;
+        
         const newTool = event.detail.tool;
         if (newTool === "select") {
             currentCanvas.style.pointerEvents = 'none';
             currentCanvas.style.cursor = 'default';
         } else if (newTool === "eraser") {
             currentCanvas.style.pointerEvents = 'auto';
-            currentCanvas.style.cursor = 'crosshair'; // Could use 'grab' or custom cursor
+            currentCanvas.style.cursor = 'crosshair';
         } else {
             currentCanvas.style.pointerEvents = 'auto';
-            currentCanvas.style.cursor = 'crosshair';
+            if (pointerType === 'pen') {
+                currentCanvas.style.cursor = 'crosshair';
+            } else {
+                currentCanvas.style.cursor = 'crosshair';
+            }
         }
     }
 
     function _handleDrawingDataChanged(event) { _redrawAllObjects(); }
-
 
     window.XSheetApp.DrawingCanvas = {
         _onScrollOrResizeBound: null,
@@ -361,27 +483,40 @@ window.XSheetApp = window.XSheetApp || {};
                 }
             };
 
+            // Remove existing listeners
             xsheetContainer.removeEventListener("scroll", this._onScrollOrResizeBound);
             window.removeEventListener("resize", this._onScrollOrResizeBound);
             canvas.removeEventListener("pointerdown", _onPointerDown);
+            canvas.removeEventListener("pointerenter", _onPointerEnter);
+            canvas.removeEventListener("pointerleave", _onPointerLeave);
+            canvas.removeEventListener("pointermove", _onPointerMove);
             window.removeEventListener("pointerup", _onPointerUpOrCancel);
             window.removeEventListener("pointercancel", _onPointerUpOrCancel);
             document.removeEventListener("toolChanged", _handleToolChange);
             document.removeEventListener("drawingChanged", _handleDrawingDataChanged);
             document.removeEventListener("projectDataChanged", this._onProjectDataChangedBound);
 
+            // Add event listeners
             xsheetContainer.addEventListener("scroll", this._onScrollOrResizeBound);
             window.addEventListener("resize", this._onScrollOrResizeBound);
             canvas.addEventListener("pointerdown", _onPointerDown);
+            canvas.addEventListener("pointerenter", _onPointerEnter); // New: for pen hover
+            canvas.addEventListener("pointerleave", _onPointerLeave); // New: for pen hover
+            canvas.addEventListener("pointermove", _onPointerMove); // New: for pen hover when not drawing
             window.addEventListener("pointerup", _onPointerUpOrCancel);
             window.addEventListener("pointercancel", _onPointerUpOrCancel);
             document.addEventListener("toolChanged", _handleToolChange);
             document.addEventListener("drawingChanged", _handleDrawingDataChanged);
             document.addEventListener("projectDataChanged", this._onProjectDataChangedBound);
 
+            // Configure canvas for better pen input
+            if (canvas.style) {
+                canvas.style.touchAction = 'none'; // Prevent default touch behaviors
+            }
+
             _setCanvasStyleForScreen();
             _redrawAllObjects();
-            console.log("DrawingCanvas initialized.");
+            console.log("DrawingCanvas initialized with enhanced pen/stylus support.");
         },
 
         refresh: () => _redrawAllObjects(),
