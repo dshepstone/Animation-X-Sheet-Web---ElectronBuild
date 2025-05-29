@@ -1,12 +1,14 @@
-// js/xsheet.js
+// js/xsheet.js - Updated with Dynamic Columns
 
-const LOGICAL_COLUMNS = [
+// Base column definitions - custom columns will be inserted dynamically
+const BASE_LOGICAL_COLUMNS = [
     { key: "action", displayName: "Action/Description", editable: true, className: "action-col" },
     { key: "frameNumber1", displayName: "Fr", editable: false, className: "frame-col", type: "frameNumber" },
     { key: "audioWaveform", displayName: "Audio Waveform", editable: false, className: "waveform-col", type: "waveform" },
     { key: "dialogue", displayName: "Dialogue", editable: true, className: "dialogue-col" },
     { key: "soundFx", displayName: "Sound FX", editable: true, className: "sound-col" },
     { key: "techNotes", displayName: "Tech. Notes", editable: true, className: "technical-col" },
+    // Custom columns will be inserted here dynamically
     { key: "frameNumber2", displayName: "Fr", editable: false, className: "frame-col", type: "frameNumber" },
     { key: "camera", displayName: "Camera Moves", editable: true, className: "camera-col" },
 ];
@@ -26,6 +28,10 @@ class XSheet {
         this.activeWaveformPointerId = null; // Track active pointer for waveform scrubbing
         this.waveformPointerType = 'mouse'; // Track pointer type for waveform
 
+        // NEW: Cache for dynamic columns to avoid recalculation
+        this._cachedActiveColumns = null;
+        this._lastCustomColumnCount = 0;
+
         if (!this.tableBody || !this.tableHead || !this.xsheetContainer) {
             console.error("CRITICAL XSheet ERROR: Essential DOM elements not found!");
             return;
@@ -34,22 +40,86 @@ class XSheet {
         this._createVerticalWaveformCanvas();
         this.xsheetContainer.addEventListener('scroll', this._handleScrollOrResize.bind(this));
         window.addEventListener('resize', this._handleScrollOrResize.bind(this));
+
+        // NEW: Listen for custom column changes
+        document.addEventListener('customColumnsChanged', this._handleCustomColumnsChanged.bind(this));
+    }
+
+    // NEW: Get active columns including custom columns
+    _getActiveColumns() {
+        const customColumnCount = this.projectData.customColumns ? this.projectData.customColumns.length : 0;
+        
+        // Use cache if custom column count hasn't changed
+        if (this._cachedActiveColumns && this._lastCustomColumnCount === customColumnCount) {
+            return this._cachedActiveColumns;
+        }
+
+        // Build dynamic column array
+        const activeColumns = [];
+        
+        // Add base columns up to techNotes (index 5)
+        for (let i = 0; i <= 5; i++) {
+            activeColumns.push({ ...BASE_LOGICAL_COLUMNS[i] });
+        }
+        
+        // Insert custom columns after techNotes
+        if (this.projectData.customColumns) {
+            this.projectData.customColumns.forEach(customCol => {
+                activeColumns.push({
+                    key: customCol.key,
+                    displayName: customCol.displayName,
+                    editable: customCol.editable,
+                    className: customCol.className,
+                    type: 'custom'
+                });
+            });
+        }
+        
+        // Add remaining base columns (frameNumber2 and camera)
+        for (let i = 6; i < BASE_LOGICAL_COLUMNS.length; i++) {
+            activeColumns.push({ ...BASE_LOGICAL_COLUMNS[i] });
+        }
+
+        // Cache the result
+        this._cachedActiveColumns = activeColumns;
+        this._lastCustomColumnCount = customColumnCount;
+        
+        console.log(`XSheet: Generated ${activeColumns.length} columns (${customColumnCount} custom)`);
+        return activeColumns;
+    }
+
+    // NEW: Handle custom column changes
+    _handleCustomColumnsChanged(event) {
+        console.log('XSheet: Custom columns changed, clearing cache and re-rendering');
+        this._cachedActiveColumns = null; // Clear cache
+        this._renderHeaders();
+        this.render();
     }
 
     _renderHeaders() {
         if (!this.tableHead) return;
         const tr = document.createElement('tr');
-        LOGICAL_COLUMNS.forEach(col => {
+        const activeColumns = this._getActiveColumns();
+        
+        activeColumns.forEach(col => {
             const th = document.createElement('th');
-            th.textContent = col.displayName; th.className = col.className || '';
+            th.textContent = col.displayName; 
+            th.className = col.className || '';
+            th.dataset.columnKey = col.key; // NEW: Add data attribute for identification
             tr.appendChild(th);
         });
-        this.tableHead.innerHTML = ''; this.tableHead.appendChild(tr);
+        this.tableHead.innerHTML = ''; 
+        this.tableHead.appendChild(tr);
+        
+        console.log(`XSheet: Rendered ${activeColumns.length} column headers`);
     }
 
     render() {
         if (!this.tableBody || !this.projectData) { return; }
         this.tableBody.innerHTML = '';
+        
+        const activeColumns = this._getActiveColumns();
+        
         for (let i = 0; i < this.projectData.frameCount; i++) {
             const tr = document.createElement('tr');
             tr.dataset.frameIndex = i;
@@ -58,22 +128,33 @@ class XSheet {
             if ((i + 1) % fps === 0) tr.classList.add('major-second-tick');
             else if ((i + 1) % 8 === 0) tr.classList.add('eighth-frame-tick');
             if (i % 2 === 0) tr.classList.add('even-row');
-            LOGICAL_COLUMNS.forEach(colConfig => {
+            
+            activeColumns.forEach(colConfig => {
                 const td = document.createElement('td');
-                td.className = colConfig.className || ''; td.dataset.columnKey = colConfig.key;
-                if (colConfig.type === "frameNumber") { td.textContent = i + 1; }
-                else if (colConfig.type === "waveform") { /* Placeholder */ }
-                else {
+                td.className = colConfig.className || ''; 
+                td.dataset.columnKey = colConfig.key;
+                
+                if (colConfig.type === "frameNumber") { 
+                    td.textContent = i + 1; 
+                } else if (colConfig.type === "waveform") { 
+                    /* Placeholder for waveform - handled by vertical waveform canvas */ 
+                } else {
+                    // Handle both base columns and custom columns
                     td.textContent = this.projectData.getCellData(i, colConfig.key);
                     if (colConfig.editable) {
-                        td.contentEditable = "true"; td.setAttribute('data-placeholder', '');
-                        td.addEventListener('blur', (event) => this.projectData.setCellData(i, colConfig.key, event.target.textContent));
+                        td.contentEditable = "true"; 
+                        td.setAttribute('data-placeholder', '');
+                        td.addEventListener('blur', (event) => {
+                            this.projectData.setCellData(i, colConfig.key, event.target.textContent);
+                        });
                     }
                 }
                 tr.appendChild(td);
             });
             this.tableBody.appendChild(tr);
         }
+        
+        console.log(`XSheet: Rendered ${this.projectData.frameCount} rows with ${activeColumns.length} columns`);
         this.renderVerticalWaveform();
     }
 
@@ -98,14 +179,23 @@ class XSheet {
     _getWaveformColumnMetrics() {
         if (!this.tableHead || !this.xsheetContainer) return null;
         const thElements = Array.from(this.tableHead.querySelectorAll('tr th'));
-        const waveformThIndex = LOGICAL_COLUMNS.findIndex(col => col.type === 'waveform');
-        if (waveformThIndex === -1 || waveformThIndex >= thElements.length) return null;
-        const waveformTh = thElements[waveformThIndex];
+        
+        // NEW: Find waveform column dynamically instead of using fixed index
+        const activeColumns = this._getActiveColumns();
+        const waveformColumnIndex = activeColumns.findIndex(col => col.type === 'waveform');
+        
+        if (waveformColumnIndex === -1 || waveformColumnIndex >= thElements.length) {
+            console.warn('XSheet: Waveform column not found in active columns');
+            return null;
+        }
+        
+        const waveformTh = thElements[waveformColumnIndex];
         const thRect = waveformTh.getBoundingClientRect();
         const containerRect = this.xsheetContainer.getBoundingClientRect();
         return {
             leftRelativeToContainer: thRect.left - containerRect.left,
             width: thRect.width,
+            columnIndex: waveformColumnIndex
         };
     }
 

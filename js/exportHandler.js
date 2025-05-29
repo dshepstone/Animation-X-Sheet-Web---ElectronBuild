@@ -1,4 +1,4 @@
-// js/exportHandler.js
+// js/exportHandler.js - Updated with Dynamic Columns Support
 console.log("exportHandler.js loaded.");
 window.XSheetApp = window.XSheetApp || {};
 window.XSheetApp.ExportHandler = {
@@ -23,6 +23,42 @@ window.XSheetApp.ExportHandler = {
         } else {
             console.error("ExportHandler: btnExportPDF element NOT FOUND in the DOM!");
         }
+    },
+
+    // NEW: Get active columns for export (matches XSheet logic)
+    _getActiveColumnsForExport: function() {
+        const baseColumns = [
+            { key: "action", displayName: "Action/Description", editable: true, className: "action-col" },
+            { key: "frameNumber1", displayName: "Fr", editable: false, className: "frame-col", type: "frameNumber" },
+            { key: "audioWaveform", displayName: "Audio Waveform", editable: false, className: "waveform-col", type: "waveform" },
+            { key: "dialogue", displayName: "Dialogue", editable: true, className: "dialogue-col" },
+            { key: "soundFx", displayName: "Sound FX", editable: true, className: "sound-col" },
+            { key: "techNotes", displayName: "Tech. Notes", editable: true, className: "technical-col" },
+        ];
+
+        const activeColumns = [...baseColumns];
+
+        // Insert custom columns after techNotes
+        if (this.projectData.customColumns && this.projectData.customColumns.length > 0) {
+            this.projectData.customColumns.forEach(customCol => {
+                activeColumns.push({
+                    key: customCol.key,
+                    displayName: customCol.displayName,
+                    editable: customCol.editable,
+                    className: customCol.className,
+                    type: 'custom'
+                });
+            });
+        }
+
+        // Add remaining base columns
+        activeColumns.push(
+            { key: "frameNumber2", displayName: "Fr", editable: false, className: "frame-col", type: "frameNumber" },
+            { key: "camera", displayName: "Camera Moves", editable: true, className: "camera-col" }
+        );
+
+        console.log(`ExportHandler: Generated ${activeColumns.length} columns for export (${this.projectData.customColumns?.length || 0} custom)`);
+        return activeColumns;
     },
 
     getOriginalRowHeight: function () {
@@ -64,6 +100,13 @@ window.XSheetApp.ExportHandler = {
 
         this.exportContainer = document.createElement('div');
         this.exportContainer.id = 'export-container';
+        
+        // NEW: Add dynamic column class for proper styling
+        const customColumnCount = this.projectData.customColumns?.length || 0;
+        if (customColumnCount > 0) {
+            this.exportContainer.classList.add(`has-${customColumnCount}-custom`);
+        }
+
         Object.assign(this.exportContainer.style, {
             position: 'fixed',
             top: '0px', left: '0px', zIndex: '10001',
@@ -203,6 +246,12 @@ window.XSheetApp.ExportHandler = {
         this.exportTable = table;
         const exportTableBodyHeight = this.projectData.frameCount * originalRowHeight;
 
+        // NEW: Add dynamic column class to export table for proper styling
+        const customColumnCount = this.projectData.customColumns?.length || 0;
+        if (customColumnCount > 0) {
+            table.classList.add(`has-${customColumnCount}-custom`);
+        }
+
         Object.assign(table.style, {
             width: exportTableWidth + 'px',
             height: (originalTheadHeight + exportTableBodyHeight) + 'px',
@@ -220,16 +269,14 @@ window.XSheetApp.ExportHandler = {
             height: originalTheadHeight + 'px'
         });
 
-        const LOGICAL_COLUMNS = [
-            { key: "action", displayName: "Action/Description" }, { key: "frameNumber1", displayName: "Fr" },
-            { key: "audioWaveform", displayName: "Audio Waveform" }, { key: "dialogue", displayName: "Dialogue" },
-            { key: "soundFx", displayName: "Sound FX" }, { key: "techNotes", displayName: "Tech. Notes" },
-            { key: "frameNumber2", displayName: "Fr" }, { key: "camera", displayName: "Camera Moves" }
-        ];
+        // NEW: Use dynamic columns instead of hardcoded ones
+        const EXPORT_COLUMNS = this._getActiveColumnsForExport();
         const originalHeaderCells = originalTable.querySelectorAll('thead th');
-        LOGICAL_COLUMNS.forEach((col, index) => {
+        
+        EXPORT_COLUMNS.forEach((col, index) => {
             const th = document.createElement('th');
             th.textContent = col.displayName;
+            th.className = col.className || '';
             Object.assign(th.style, {
                 border: '1px solid #999', fontWeight: 'bold', textAlign: 'center',
                 height: originalTheadHeight + 'px'
@@ -240,8 +287,15 @@ window.XSheetApp.ExportHandler = {
                 th.style.width = originalTh.offsetWidth + 'px';
                 th.style.padding = originalThStyles.padding;
                 th.style.fontSize = originalThStyles.fontSize;
-                if (col.key === 'frameNumber1' || col.key === 'frameNumber2') th.style.backgroundColor = '#f0f0f0';
-                else if (col.key === 'audioWaveform') { th.style.backgroundColor = 'transparent'; th.style.padding = '0'; }
+                if (col.key === 'frameNumber1' || col.key === 'frameNumber2') {
+                    th.style.backgroundColor = '#f0f0f0';
+                } else if (col.key === 'audioWaveform') { 
+                    th.style.backgroundColor = 'transparent'; 
+                    th.style.padding = '0'; 
+                } else if (col.type === 'custom') {
+                    // NEW: Custom column styling in export
+                    th.style.backgroundColor = '#fffaf0';
+                }
             }
             headerRow.appendChild(th);
         });
@@ -256,8 +310,10 @@ window.XSheetApp.ExportHandler = {
             if (i % 2 === 0) tr.style.backgroundColor = '#f9f9f9';
             if ((i + 1) % fps === 0) tr.style.borderBottom = '2px solid #777';
             else if ((i + 1) % 8 === 0) tr.style.borderBottom = '1px dashed #bbb';
-            LOGICAL_COLUMNS.forEach((col, colIndex) => {
+            
+            EXPORT_COLUMNS.forEach((col, colIndex) => {
                 const td = document.createElement('td');
+                td.className = col.className || '';
                 Object.assign(td.style, {
                     border: '1px solid #999', height: originalRowHeight + 'px',
                     verticalAlign: 'top',
@@ -269,17 +325,29 @@ window.XSheetApp.ExportHandler = {
                     td.style.fontSize = oStyles.fontSize;
                     td.style.width = originalHeaderCells[colIndex].offsetWidth + 'px';
                 }
+                
                 if (col.key === 'frameNumber1' || col.key === 'frameNumber2') {
-                    td.textContent = i + 1; Object.assign(td.style, { textAlign: 'center', backgroundColor: '#f0f0f0', fontWeight: 'bold' });
+                    td.textContent = i + 1; 
+                    Object.assign(td.style, { textAlign: 'center', backgroundColor: '#f0f0f0', fontWeight: 'bold' });
                     if (i === 0) td.style.backgroundColor = '#c8e6c9';
-                } else if (col.key === 'audioWaveform') { Object.assign(td.style, { padding: '0', backgroundColor: 'transparent' }); }
-                else { td.textContent = this.projectData.getCellData(i, col.key); }
+                } else if (col.key === 'audioWaveform') { 
+                    Object.assign(td.style, { padding: '0', backgroundColor: 'transparent' }); 
+                } else if (col.type === 'custom') {
+                    // NEW: Handle custom column data
+                    td.textContent = this.projectData.getCellData(i, col.key);
+                    td.style.backgroundColor = '#fffaf0';
+                    if (i % 2 === 0) td.style.backgroundColor = '#fdf8f0';
+                } else { 
+                    td.textContent = this.projectData.getCellData(i, col.key); 
+                }
                 tr.appendChild(td);
             });
             tbody.appendChild(tr);
         }
         table.appendChild(tbody);
         container.appendChild(table);
+        
+        console.log(`ExportHandler: Created export table with ${EXPORT_COLUMNS.length} columns (${customColumnCount} custom)`);
     },
 
     createExportWaveform: function (tableContainer, originalRowHeight, passedOriginalTheadHeight) {
@@ -292,6 +360,8 @@ window.XSheetApp.ExportHandler = {
 
         const headerCells = this.exportTable.querySelectorAll('thead th');
         let waveformColumnIndex = -1, waveformColumnLeft = 0, waveformColumnWidth = 0;
+        
+        // NEW: Find waveform column dynamically (it may be in different position due to custom columns)
         headerCells.forEach((th, index) => {
             if (th.textContent.includes('Audio Waveform')) {
                 waveformColumnIndex = index;
@@ -472,7 +542,7 @@ window.XSheetApp.ExportHandler = {
                 ctx.stroke();
             });
         });
-        // console.log(`ExportHandler Drawings: canvas created with ${drawingCount} objects.`);
+        console.log(`ExportHandler Drawings: canvas created with ${drawingCount} objects, perfect alignment maintained`);
     },
 
     cleanupExportPage: function () {
@@ -535,7 +605,12 @@ window.XSheetApp.ExportHandler = {
     async exportToPDF() {
         const statusBar = document.getElementById('statusBar');
         if (this.isExporting) { statusBar.textContent = "Status: Export already in progress."; return; }
-        statusBar.textContent = "Status: Preparing PDF export...";
+        
+        // NEW: Include custom column info in status
+        const customColumnCount = this.projectData.customColumns?.length || 0;
+        const columnInfo = customColumnCount > 0 ? ` (${customColumnCount} custom columns)` : '';
+        statusBar.textContent = `Status: Preparing PDF export${columnInfo}...`;
+        
         this.isExporting = true;
 
         let exportPageElement;
@@ -566,7 +641,7 @@ window.XSheetApp.ExportHandler = {
             exportPageElement.style.visibility = 'hidden';
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            statusBar.textContent = "Status: Capturing content (this may take a moment)...";
+            statusBar.textContent = `Status: Capturing content${columnInfo} (this may take a moment)...`;
 
             const MAX_CANVAS_DIM_INTERNAL = 32000;
             let scaleForHtml2CanvasInternal = 1.0;
@@ -613,7 +688,7 @@ window.XSheetApp.ExportHandler = {
                 throw new Error("html2canvas returned a zero-dimension canvas.");
             }
 
-            statusBar.textContent = "Status: Generating PDF...";
+            statusBar.textContent = `Status: Generating PDF${columnInfo}...`;
             const imgData = pageCanvas.toDataURL('image/png');
             const pageCanvasRenderedWidthPt = pageCanvas.width * 72 / 96;
             const pageCanvasRenderedHeightPt = pageCanvas.height * 72 / 96;
@@ -680,13 +755,14 @@ window.XSheetApp.ExportHandler = {
             // Save to project exports folder with versioning or fall back to download
             const date = new Date().toISOString().slice(0, 10);
             const projectName = this.projectData.projectName || 'AnimationXSheet';
-            const baseFilename = `${projectName}_${date}_${pdfOrientation}.pdf`;
+            const customSuffix = customColumnCount > 0 ? `_custom${customColumnCount}` : '';
+            const baseFilename = `${projectName}_${date}${customSuffix}_${pdfOrientation}.pdf`;
 
             // Try to save to project exports folder if available
             if (this.projectData.exportsFolderHandle) {
                 try {
                     console.log("ExportHandler: Saving PDF to project exports folder with versioning");
-                    statusBar.textContent = "Status: Saving PDF to project exports folder...";
+                    statusBar.textContent = `Status: Saving PDF to project exports folder${columnInfo}...`;
 
                     // Get versioned filename to prevent overwriting
                     const versionedFilename = await this._getVersionedExportFileName(baseFilename);
@@ -708,14 +784,14 @@ window.XSheetApp.ExportHandler = {
                     // Fallback to regular download
                     pdf.save(baseFilename);
                     const pageInfo = totalPages > 1 ? `, ${totalPages} pages` : ', single page';
-                    statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}`;
+                    statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}${columnInfo}`;
                 }
             } else {
                 // No project folder or API not supported - use regular download
                 console.log("ExportHandler: No project exports folder, using regular download");
                 pdf.save(baseFilename);
                 const pageInfo = totalPages > 1 ? `, ${totalPages} pages` : ', single page';
-                statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}`;
+                statusBar.textContent = `Status: PDF exported (downloaded) - ${pdfOrientation}${pageInfo}${columnInfo}`;
             }
 
         } catch (error) {

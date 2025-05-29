@@ -1,4 +1,4 @@
-// js/projectData.js
+// js/projectData.js - Updated with Dynamic Columns
 class ProjectData {
     constructor(projectName = `AnimationXSheet_${new Date().toISOString().slice(0, 10)}`) {
         this.projectName = projectName;
@@ -20,6 +20,11 @@ class ProjectData {
         this.frameCount = 48;
         this.rows = [];
 
+        // NEW: Dynamic Custom Columns Management
+        this.customColumns = [];
+        this.maxCustomColumns = 5; // Limit for horizontal space management
+        this.nextCustomColumnId = 1; // Track IDs for unique keys
+
         this.audio = {
             fileName: null, filePath: null, audioBuffer: null,
             duration: 0, sampleRate: 0, numberOfChannels: 0,
@@ -34,7 +39,7 @@ class ProjectData {
         this.activeDrawingLayerIndex = 0;
 
         this.initNewProject(this.metadata.fps, this.frameCount);
-        console.log("ProjectData initialized for:", this.projectName);
+        console.log("ProjectData initialized with dynamic columns support for:", this.projectName);
     }
 
     initNewProject(fps = 24, frameCount = 48) {
@@ -57,6 +62,11 @@ class ProjectData {
         };
         this.frameCount = parseInt(frameCount) || 48;
         this.rows = [];
+
+        // NEW: Reset custom columns
+        this.customColumns = [];
+        this.nextCustomColumnId = 1;
+
         this._initializeRows();
         this.clearAudioData(false);
         this.drawingLayers = [{ name: "foreground", visible: true, objects: [] }];
@@ -80,9 +90,124 @@ class ProjectData {
     _initializeRows() {
         this.rows = [];
         const defaultCellData = { action: "", dialogue: "", soundFx: "", techNotes: "", camera: "" };
+        
+        // Add custom column data to default
+        this.customColumns.forEach(col => {
+            defaultCellData[col.key] = "";
+        });
+
         for (let i = 0; i < this.frameCount; i++) {
             this.rows.push({ ...defaultCellData });
         }
+    }
+
+    // NEW: Custom Column Management Methods
+    addCustomColumn(displayName = null) {
+        if (this.customColumns.length >= this.maxCustomColumns) {
+            console.warn(`ProjectData: Cannot add more columns. Maximum of ${this.maxCustomColumns} custom columns allowed.`);
+            return { success: false, reason: 'maxColumnsReached' };
+        }
+
+        const columnKey = `custom${this.nextCustomColumnId}`;
+        const finalDisplayName = displayName || `Custom ${this.nextCustomColumnId}`;
+        
+        const newColumn = {
+            key: columnKey,
+            displayName: finalDisplayName,
+            editable: true,
+            className: 'custom-col',
+            id: this.nextCustomColumnId // Store ID for potential future reordering
+        };
+
+        this.customColumns.push(newColumn);
+        this.nextCustomColumnId++;
+
+        // Add this column data to all existing rows
+        this.rows.forEach(row => {
+            row[columnKey] = "";
+        });
+
+        this.isModified = true;
+        console.log(`ProjectData: Added custom column "${finalDisplayName}" with key "${columnKey}"`);
+        
+        document.dispatchEvent(new CustomEvent('projectDataChanged', { 
+            detail: { reason: 'columnAdded', columnKey, displayName: finalDisplayName } 
+        }));
+
+        // Update column count UI
+        document.dispatchEvent(new CustomEvent('customColumnsChanged', {
+            detail: { 
+                count: this.customColumns.length, 
+                maxCount: this.maxCustomColumns,
+                action: 'added'
+            }
+        }));
+
+        return { success: true, columnKey, displayName: finalDisplayName };
+    }
+
+    removeCustomColumn() {
+        if (this.customColumns.length === 0) {
+            console.warn("ProjectData: No custom columns to remove.");
+            return { success: false, reason: 'noColumnsToRemove' };
+        }
+
+        // Remove the last column
+        const removedColumn = this.customColumns.pop();
+        
+        // Remove this column data from all rows
+        this.rows.forEach(row => {
+            delete row[removedColumn.key];
+        });
+
+        this.isModified = true;
+        console.log(`ProjectData: Removed custom column "${removedColumn.displayName}"`);
+        
+        document.dispatchEvent(new CustomEvent('projectDataChanged', { 
+            detail: { reason: 'columnRemoved', columnKey: removedColumn.key } 
+        }));
+
+        // Update column count UI
+        document.dispatchEvent(new CustomEvent('customColumnsChanged', {
+            detail: { 
+                count: this.customColumns.length, 
+                maxCount: this.maxCustomColumns,
+                action: 'removed'
+            }
+        }));
+
+        return { success: true, removedColumn };
+    }
+
+    // NEW: Method to rename custom columns
+    renameCustomColumn(columnKey, newDisplayName) {
+        const column = this.customColumns.find(col => col.key === columnKey);
+        if (!column) {
+            return { success: false, reason: 'columnNotFound' };
+        }
+
+        const oldName = column.displayName;
+        column.displayName = newDisplayName;
+        this.isModified = true;
+
+        console.log(`ProjectData: Renamed column "${oldName}" to "${newDisplayName}"`);
+        
+        document.dispatchEvent(new CustomEvent('projectDataChanged', { 
+            detail: { reason: 'columnRenamed', columnKey, oldName, newName: newDisplayName } 
+        }));
+
+        return { success: true, oldName, newName: newDisplayName };
+    }
+
+    // NEW: Get current custom column count and limits
+    getCustomColumnInfo() {
+        return {
+            count: this.customColumns.length,
+            maxCount: this.maxCustomColumns,
+            canAdd: this.customColumns.length < this.maxCustomColumns,
+            canRemove: this.customColumns.length > 0,
+            columns: [...this.customColumns] // Return copy to prevent external modification
+        };
     }
 
     setFrameCount(count) {
@@ -94,6 +219,11 @@ class ProjectData {
 
         if (count > oldCount) {
             const defaultCellData = { action: "", dialogue: "", soundFx: "", techNotes: "", camera: "" };
+            // Include custom columns in default data
+            this.customColumns.forEach(col => {
+                defaultCellData[col.key] = "";
+            });
+            
             for (let i = oldCount; i < count; i++) {
                 this.rows.push({ ...defaultCellData });
             }
@@ -214,6 +344,9 @@ class ProjectData {
             metadata: { ...this.metadata },
             frameCount: this.frameCount,
             rows: JSON.parse(JSON.stringify(this.rows)),
+            // NEW: Include custom columns in serialization
+            customColumns: JSON.parse(JSON.stringify(this.customColumns)),
+            nextCustomColumnId: this.nextCustomColumnId,
             audio: {
                 fileName: this.audio.fileName,
                 filePath: this.audio.filePath,
@@ -237,6 +370,10 @@ class ProjectData {
         this.projectName = data.projectName || `AnimationXSheet_${new Date().toISOString().slice(0, 10)}`;
         this.metadata = { ...this.metadata, ...(data.metadata || {}) };
         this.frameCount = data.frameCount || 48;
+
+        // NEW: Load custom columns with backward compatibility
+        this.customColumns = data.customColumns || [];
+        this.nextCustomColumnId = data.nextCustomColumnId || 1;
 
         this._initializeRows();
         if (data.rows) {
@@ -267,6 +404,7 @@ class ProjectData {
         this.activeDrawingLayerIndex = data.activeDrawingLayerIndex !== undefined ? data.activeDrawingLayerIndex : 0;
 
         this.isModified = false;
+        console.log(`ProjectData: Loaded project with ${this.customColumns.length} custom columns`);
         document.dispatchEvent(new CustomEvent('projectDataChanged', { detail: { reason: 'projectLoaded' } }));
     }
 }

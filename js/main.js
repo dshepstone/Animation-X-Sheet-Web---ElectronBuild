@@ -1,4 +1,4 @@
-// js/main.js
+// js/main.js - Updated with Column Management
 document.addEventListener('DOMContentLoaded', () => {
     console.log("main.js: DOMContentLoaded event fired.");
     if (typeof ProjectData === 'undefined') { console.error("ProjectData class is not defined!"); return; }
@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btnSetProject: document.getElementById('btnSetProject'),
         btnReset: document.getElementById('btnReset'),
         projectStatus: document.getElementById('projectStatus'),
+
+        // NEW: Column Management elements
+        btnAddColumn: document.getElementById('btnAddColumn'),
+        btnRemoveColumn: document.getElementById('btnRemoveColumn'),
+        columnCount: document.getElementById('columnCount'),
 
         // Existing elements
         btnImportAudio: document.getElementById('btnImportAudio'),
@@ -69,6 +74,109 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (xsheet?.render) { xsheet.render(); } else { console.error("main.js: xsheet.render not available!"); }
 
+    // NEW: Column Management Functions
+    function updateColumnControlsUI() {
+        const columnInfo = projectData.getCustomColumnInfo();
+        
+        if (elements.columnCount) {
+            elements.columnCount.textContent = `${columnInfo.count}/${columnInfo.maxCount} columns`;
+        }
+        
+        if (elements.btnAddColumn) {
+            elements.btnAddColumn.disabled = !columnInfo.canAdd;
+            elements.btnAddColumn.title = columnInfo.canAdd ? 
+                'Add a custom column' : 
+                `Maximum ${columnInfo.maxCount} custom columns allowed`;
+        }
+        
+        if (elements.btnRemoveColumn) {
+            elements.btnRemoveColumn.disabled = !columnInfo.canRemove;
+            elements.btnRemoveColumn.title = columnInfo.canRemove ? 
+                'Remove the last custom column' : 
+                'No custom columns to remove';
+        }
+        
+        // NEW: Apply dynamic CSS class for column width management
+        const xsheetTable = document.getElementById('xsheetTable');
+        if (xsheetTable) {
+            // Remove any existing custom column classes
+            for (let i = 1; i <= 5; i++) {
+                xsheetTable.classList.remove(`has-${i}-custom`);
+            }
+            
+            // Add current custom column class
+            if (columnInfo.count > 0) {
+                xsheetTable.classList.add(`has-${columnInfo.count}-custom`);
+            }
+        }
+        
+        console.log(`Column UI updated: ${columnInfo.count}/${columnInfo.maxCount} columns`);
+    }
+
+    // NEW: Column Management Event Handlers
+    elements.btnAddColumn?.addEventListener('click', () => {
+        console.log("Add Column button clicked");
+        
+        // Simple prompt for column name (could be enhanced with a modal later)
+        const customName = prompt("Enter name for the new column:", "");
+        
+        if (customName === null) {
+            // User cancelled
+            return;
+        }
+        
+        const result = projectData.addCustomColumn(customName || undefined);
+        
+        if (result.success) {
+            if (elements.statusBar) {
+                elements.statusBar.textContent = `Status: Added column "${result.displayName}"`;
+            }
+            console.log(`Successfully added column: ${result.displayName}`);
+        } else {
+            const message = result.reason === 'maxColumnsReached' ? 
+                `Cannot add more columns. Maximum of ${projectData.maxCustomColumns} allowed.` :
+                'Failed to add column';
+                
+            alert(message);
+            if (elements.statusBar) {
+                elements.statusBar.textContent = `Status: ${message}`;
+            }
+        }
+    });
+
+    elements.btnRemoveColumn?.addEventListener('click', () => {
+        console.log("Remove Column button clicked");
+        
+        const columnInfo = projectData.getCustomColumnInfo();
+        if (columnInfo.count === 0) {
+            alert("No custom columns to remove.");
+            return;
+        }
+        
+        // Find the last column name for confirmation
+        const lastColumn = columnInfo.columns[columnInfo.columns.length - 1];
+        const confirmMessage = `Remove the column "${lastColumn.displayName}"?\n\nThis will delete all data in this column and cannot be undone.`;
+        
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        const result = projectData.removeCustomColumn();
+        
+        if (result.success) {
+            if (elements.statusBar) {
+                elements.statusBar.textContent = `Status: Removed column "${result.removedColumn.displayName}"`;
+            }
+            console.log(`Successfully removed column: ${result.removedColumn.displayName}`);
+        } else {
+            const message = 'Failed to remove column';
+            alert(message);
+            if (elements.statusBar) {
+                elements.statusBar.textContent = `Status: ${message}`;
+            }
+        }
+    });
+
     function updateUIFromProjectData() {
         console.log("main.js: updateUIFromProjectData called.");
 
@@ -110,6 +218,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (elements.metaAnimatorName) elements.metaAnimatorName.value = projectData.metadata.animatorName || "";
         if (elements.metaVersionNumber) elements.metaVersionNumber.value = projectData.metadata.versionNumber || "1.0";
         if (elements.metaShotNumber) elements.metaShotNumber.value = projectData.metadata.shotNumber || "";
+        
+        // NEW: Update column controls
+        updateColumnControlsUI();
     }
 
     // Helper function to check if project folder is set - DOES NOT TRIGGER FILE DIALOGS
@@ -265,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('projectDataChanged', (e) => {
         const reason = e.detail?.reason;
 
-        if (xsheet?.render && (reason === 'frameCount' || reason === 'newProject' || reason === 'projectLoaded' || reason === 'audioCleared' || reason === 'fpsChanged')) {
+        if (xsheet?.render && (reason === 'frameCount' || reason === 'newProject' || reason === 'projectLoaded' || reason === 'audioCleared' || reason === 'fpsChanged' || reason === 'columnAdded' || reason === 'columnRemoved')) {
             xsheet.render();
         }
         if (xsheet?.renderVerticalWaveform && (reason === 'audioLoaded' || reason === 'audioCleared' || reason === 'frameCount' || reason === 'fpsChanged' || reason === 'projectLoaded' || reason === 'newProject')) {
@@ -296,7 +407,16 @@ document.addEventListener('DOMContentLoaded', () => {
             updateAudioScrubSlider();
             updatePlaybackButtonsUI(false);
             updateFramesInput();
+        } else if (reason === 'columnAdded' || reason === 'columnRemoved') {
+            // Column changes are handled by customColumnsChanged event, but we update status here
+            updateColumnControlsUI();
         }
+    });
+
+    // NEW: Custom Column Event Listener
+    document.addEventListener('customColumnsChanged', (e) => {
+        console.log("main.js: customColumnsChanged event", e.detail);
+        updateColumnControlsUI();
     });
 
     document.addEventListener('audioLoaded', (e) => {
@@ -386,5 +506,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    console.log("Main app with Project Management setup complete.");
+    console.log("Main app with Project Management and Column Management setup complete.");
 });

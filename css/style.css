@@ -1,4 +1,4 @@
-/* css/style.css */
+/* css/style.css - Updated with Column Controls */
 :root {
     --header-height: 60px;
     /* Increased for project controls */
@@ -15,6 +15,7 @@
     --font-size-small: 11px;
     --project-green: #2e7d32;
     --project-blue: #1976d2;
+    --column-orange: #f57c00; /* NEW: Color for column controls */
 }
 
 * {
@@ -94,6 +95,54 @@ body {
     text-overflow: ellipsis;
 }
 
+/* NEW: Column Management Controls */
+.column-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border: 1px solid var(--column-orange);
+    border-radius: 4px;
+    background-color: #fff8f0;
+}
+
+.column-controls button {
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+    border: 1px solid var(--column-orange);
+    background-color: white;
+    color: var(--column-orange);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 70px;
+}
+
+.column-controls button:hover:not(:disabled) {
+    background-color: var(--column-orange);
+    color: white;
+}
+
+.column-controls button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.column-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #f5f5f5;
+    color: #999;
+    border-color: #ddd;
+}
+
+#columnCount {
+    font-size: 11px;
+    font-weight: 500;
+    margin-left: 4px;
+    white-space: nowrap;
+    color: var(--column-orange);
+}
+
 .divider {
     width: 1px;
     height: 24px;
@@ -113,7 +162,7 @@ body {
     font-size: var(--font-size-small);
 }
 
-.app-header button:not(.project-controls button) {
+.app-header button:not(.project-controls button):not(.column-controls button) {
     padding: 5px 10px;
     font-size: var(--font-size-small);
 }
@@ -302,7 +351,7 @@ body {
     text-align: center;
 }
 
-/* Column classes (match LOGICAL_COLUMNS in xsheet.js) */
+/* Base column widths - automatically adjust when custom columns are present */
 .action-col {
     width: 20%;
 }
@@ -332,18 +381,65 @@ body {
     width: 12%;
 }
 
-.extra1-col,
-.extra2-col {
-    width: 8%;
-}
-
 .camera-col {
     width: 14%;
 }
 
+/* NEW: Custom column styling */
+.custom-col {
+    width: 8%; /* Base width for custom columns */
+    text-align: left;
+    background-color: #fffaf0; /* Very light orange tint */
+    position: relative;
+}
+
+.custom-col::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: var(--column-orange);
+    opacity: 0.3;
+}
+
+/* NEW: Dynamic width adjustments based on number of custom columns */
+/* These are applied automatically as custom columns change */
+
+/* When 1 custom column exists */
+#xsheetTable.has-1-custom .action-col { width: 19%; }
+#xsheetTable.has-1-custom .dialogue-col { width: 11%; }
+#xsheetTable.has-1-custom .camera-col { width: 13%; }
+
+/* When 2 custom columns exist */
+#xsheetTable.has-2-custom .action-col { width: 18%; }
+#xsheetTable.has-2-custom .dialogue-col { width: 10%; }
+#xsheetTable.has-2-custom .camera-col { width: 12%; }
+
+/* When 3 custom columns exist */
+#xsheetTable.has-3-custom .action-col { width: 17%; }
+#xsheetTable.has-3-custom .dialogue-col { width: 9%; }
+#xsheetTable.has-3-custom .camera-col { width: 11%; }
+
+/* When 4 custom columns exist */
+#xsheetTable.has-4-custom .action-col { width: 16%; }
+#xsheetTable.has-4-custom .dialogue-col { width: 8%; }
+#xsheetTable.has-4-custom .camera-col { width: 10%; }
+
+/* When 5 custom columns exist (maximum) */
+#xsheetTable.has-5-custom .action-col { width: 15%; }
+#xsheetTable.has-5-custom .dialogue-col { width: 7%; }
+#xsheetTable.has-5-custom .camera-col { width: 9%; }
+
 /* Row styling */
 #xsheetTable tr.even-row td:not(.frame-col) {
     background-color: #f9f9f9;
+}
+
+/* Custom columns in even rows keep their subtle tint */
+#xsheetTable tr.even-row td.custom-col {
+    background-color: #fdf8f0;
 }
 
 #xsheetTable tr.highlighted-frame td {
@@ -483,8 +579,17 @@ body {
     background-color: #f9f9f9;
 }
 
-/* Responsive adjustments for project controls */
-@media (max-width: 1200px) {
+/* NEW: Export styles for custom columns */
+#export-container .custom-col {
+    background-color: #fffaf0;
+}
+
+#export-container tr:nth-child(even) .custom-col {
+    background-color: #fdf8f0;
+}
+
+/* Responsive adjustments for project controls and column controls */
+@media (max-width: 1400px) {
     .app-header {
         flex-wrap: wrap;
         height: auto;
@@ -493,10 +598,9 @@ body {
         gap: 6px;
     }
 
-    .project-controls {
+    .project-controls,
+    .column-controls {
         order: -1;
-        width: 100%;
-        justify-content: flex-start;
         margin-bottom: 4px;
     }
 
@@ -505,18 +609,33 @@ body {
     }
 }
 
-@media (max-width: 800px) {
-    .project-controls button {
-        padding: 3px 6px;
-        font-size: 10px;
+@media (max-width: 1200px) {
+    .project-controls,
+    .column-controls {
+        width: 100%;
+        justify-content: flex-start;
     }
 
-    #projectStatus {
+    #columnCount {
+        margin-left: auto;
+    }
+}
+
+@media (max-width: 800px) {
+    .project-controls button,
+    .column-controls button {
+        padding: 3px 6px;
+        font-size: 10px;
+        min-width: 60px;
+    }
+
+    #projectStatus,
+    #columnCount {
         font-size: 10px;
         max-width: 120px;
     }
 
-    .app-header button:not(.project-controls button) {
+    .app-header button:not(.project-controls button):not(.column-controls button) {
         padding: 4px 8px;
         font-size: 11px;
     }
@@ -538,6 +657,11 @@ body {
     #left-toolbar input[type="color"] {
         width: 40px;
         height: 25px;
+    }
+
+    /* Adjust custom column width on smaller screens */
+    .custom-col {
+        width: 7%;
     }
 }
 
@@ -611,5 +735,14 @@ body {
 
     #export-container tr:nth-child(even) td:not(.frame-col) {
         background-color: #f9f9f9 !important;
+    }
+
+    /* Print styles for custom columns */
+    #export-container .custom-col {
+        background-color: #fafafa !important;
+    }
+
+    #export-container tr:nth-child(even) .custom-col {
+        background-color: #f5f5f5 !important;
     }
 }
