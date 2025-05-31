@@ -410,6 +410,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (reason === 'columnAdded' || reason === 'columnRemoved') {
             // Column changes are handled by customColumnsChanged event, but we update status here
             updateColumnControlsUI();
+            // CRITICAL: Refresh drawing canvas after column changes
+            if (window.XSheetApp.DrawingCanvas && window.XSheetApp.DrawingCanvas.refresh) {
+                window.XSheetApp.DrawingCanvas.refresh();
+            }
         }
     });
 
@@ -417,6 +421,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('customColumnsChanged', (e) => {
         console.log("main.js: customColumnsChanged event", e.detail);
         updateColumnControlsUI();
+    });
+
+    // NEW: Drawing coordinate transformation event listener
+    document.addEventListener('drawingChanged', (e) => {
+        if (e.detail?.reason === 'coordinateTransform') {
+            console.log(`main.js: Drawing coordinates transformed for ${e.detail.transformedObjects} objects (scale: ${e.detail.scaleX?.toFixed(4)})`);
+            if (elements.statusBar) {
+                elements.statusBar.textContent = `Status: Adjusted ${e.detail.transformedObjects} drawings for new column layout`;
+            }
+        }
     });
 
     document.addEventListener('audioLoaded', (e) => {

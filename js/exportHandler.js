@@ -141,13 +141,26 @@ window.XSheetApp.ExportHandler = {
     createExportMetadata: function () {
         const originalMetadata = document.getElementById('metadata-grid');
         if (!originalMetadata) { /* console.warn("ExportHandler: metadata-grid not found.");*/ return; }
-        const originalStyles = window.getComputedStyle(originalMetadata);
+        
         const metadataDiv = document.createElement('div');
+        
+        // FIXED: Use explicit grid layout that fits within export width
+        // Calculate number of columns based on container width to ensure all fields fit
+        const containerWidth = this.exportContainer.offsetWidth || 800;
+        const minFieldWidth = 160;
+        const maxColumns = Math.floor((containerWidth - 40) / (minFieldWidth + 10)); // Account for padding and gaps
+        const actualColumns = Math.min(Math.max(3, maxColumns), 6); // Between 3-6 columns
+        
         Object.assign(metadataDiv.style, {
-            display: 'grid', gridTemplateColumns: originalStyles.gridTemplateColumns,
-            gap: originalStyles.gap, marginBottom: (parseFloat(originalStyles.marginBottom) || 15) + 'px',
-            fontSize: originalStyles.fontSize
+            display: 'grid', 
+            gridTemplateColumns: `repeat(${actualColumns}, 1fr)`, // Equal width columns that fit
+            gap: '5px 10px', 
+            marginBottom: '15px',
+            fontSize: '11px',
+            width: '100%', // Ensure it uses full available width
+            boxSizing: 'border-box'
         });
+        
         const metadataFields = [
             { label: 'Project #', value: document.getElementById('metaProjectNumber')?.value || '' },
             { label: 'Date', value: document.getElementById('metaDate')?.value || '' },
@@ -156,21 +169,40 @@ window.XSheetApp.ExportHandler = {
             { label: 'Version', value: document.getElementById('metaVersionNumber')?.value || '1.0' },
             { label: 'Shot #', value: document.getElementById('metaShotNumber')?.value || '' }
         ];
+        
         metadataFields.forEach(field => {
             const fieldDiv = document.createElement('div');
             Object.assign(fieldDiv.style, {
-                border: '1px solid #999', padding: '3px 5px', backgroundColor: '#fff',
-                display: 'flex', alignItems: 'center'
+                border: '1px solid #999', 
+                padding: '3px 5px', 
+                backgroundColor: '#fff',
+                display: 'flex', 
+                alignItems: 'center',
+                minWidth: '0', // Allow shrinking
+                overflow: 'hidden' // Prevent overflow
             });
             const label = document.createElement('span');
             label.textContent = field.label + ':';
-            Object.assign(label.style, { fontWeight: 'bold', marginRight: '5px', whiteSpace: 'nowrap' });
+            Object.assign(label.style, { 
+                fontWeight: 'bold', 
+                marginRight: '5px', 
+                whiteSpace: 'nowrap',
+                flexShrink: '0' // Don't shrink the label
+            });
             const value = document.createElement('span');
             value.textContent = field.value;
+            Object.assign(value.style, {
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: '0' // Allow shrinking
+            });
             fieldDiv.append(label, value);
             metadataDiv.appendChild(fieldDiv);
         });
+        
         this.exportContainer.appendChild(metadataDiv);
+        console.log(`ExportHandler: Created metadata grid with ${actualColumns} columns to fit container width ${containerWidth}px`);
     },
 
     createExportTableWithOverlays: function (originalRowHeight, originalTheadHeight) {
@@ -454,14 +486,26 @@ window.XSheetApp.ExportHandler = {
             || tableContainer.offsetWidth
             || document.getElementById('xsheet-container')?.scrollWidth || 1000;
 
-        const originalScrollWidth = document.getElementById('xsheet-container')?.scrollWidth || exportTableWidth;
+        // FIXED: Get the CURRENT original table width (which includes custom columns in live DOM)
+        // We need to differentiate between "current original" and "baseline original" for proper scaling
+        const currentOriginalTable = document.getElementById('xsheetTable');
+        const currentOriginalScrollWidth = currentOriginalTable ? currentOriginalTable.offsetWidth : exportTableWidth;
 
-        //––––– 2  Accurate scale factors –––––––––––––––––––––––––––––––––––
+        //––––– 2  FIXED: Scale factors for dynamic column layouts –––––––––––––––––––––––––––––––––––
+        // When custom columns are added, both original and export tables have the same column structure
+        // but may have different total widths due to export container constraints
         const yScaleFactor = (originalBodyHeight > 0 && exportBodyHeight > 0) ? (exportBodyHeight / originalBodyHeight) : 1;
-        const xScaleFactor = (originalScrollWidth > 0 && exportTableWidth > 0) ? (exportTableWidth / originalScrollWidth) : 1;
+        
+        // CRITICAL FIX: For drawing alignment, we need to account for the fact that drawings were created
+        // on the current table layout, so if the export table has the same column structure, 
+        // the scale factor should be minimal unless there's actual size difference
+        let xScaleFactor = 1.0;
+        if (currentOriginalScrollWidth > 0 && exportTableWidth > 0) {
+            xScaleFactor = exportTableWidth / currentOriginalScrollWidth;
+        }
 
-        // console.log(`Export Drawings: exportBodyH=${exportBodyHeight}px  origBodyH=${originalBodyHeight}px  ⇒ yScale=${yScaleFactor.toFixed(6)}`);
-        // console.log(`Export Drawings: exportW=${exportTableWidth}px    origW=${originalScrollWidth}px  ⇒ xScale=${xScaleFactor.toFixed(6)}`);
+        console.log(`Export Drawings: exportBodyH=${exportBodyHeight}px  origBodyH=${originalBodyHeight}px  ⇒ yScale=${yScaleFactor.toFixed(6)}`);
+        console.log(`Export Drawings: exportW=${exportTableWidth}px    currentOrigW=${currentOriginalScrollWidth}px  ⇒ xScale=${xScaleFactor.toFixed(6)}`);
 
         //––––– 3  Build the overlay canvas sized for the export table –––––
         const actualTheadHeightForDrawingCanvasTop =
@@ -479,18 +523,23 @@ window.XSheetApp.ExportHandler = {
             height: drawingCanvasBodyHeight + 'px',
             zIndex: '20', pointerEvents: 'none', backgroundColor: 'transparent',
             border: '0'
-            // border: '2px dashed lime' 
+            // border: '2px dashed lime' // DEBUG: Uncomment to see canvas bounds
         });
         tableContainer.appendChild(drawingCanvas);
         const ctx = drawingCanvas.getContext('2d');
 
-        const originalTableElement = document.getElementById('xsheetTable');
-        const originalTableThead = originalTableElement?.querySelector('thead');
-        if (!originalTableThead) { console.error("ExportHandler Drawings: Original table header not found for transform."); return; }
-        const originalTheadHeightForCoordTransform = originalTableThead.offsetHeight;
+        // FIXED: Get the CURRENT original table header height (matches the export table structure)
+        const currentOriginalTableElement = document.getElementById('xsheetTable');
+        const currentOriginalTableThead = currentOriginalTableElement?.querySelector('thead');
+        if (!currentOriginalTableThead) { 
+            console.error("ExportHandler Drawings: Current original table header not found for transform."); 
+            return; 
+        }
+        const currentOriginalTheadHeightForCoordTransform = currentOriginalTableThead.offsetHeight;
 
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         let drawingCount = 0;
+        
         this.projectData.drawingLayers.forEach(layer => {
             if (!layer.visible || !layer.objects || layer.objects.length === 0) return;
             layer.objects.forEach(obj => {
@@ -500,36 +549,41 @@ window.XSheetApp.ExportHandler = {
                 ctx.lineWidth = Math.max(0.5, Math.min(ctx.lineWidth, (obj.style?.width || 2) * 2));
                 ctx.strokeStyle = obj.style?.color || '#000000';
                 if (!obj.points || obj.points.length === 0) return;
+                
                 ctx.beginPath();
                 const firstPoint = obj.points[0];
-                let yInOriginalBody = firstPoint.y - originalTheadHeightForCoordTransform;
+                
+                // FIXED: Use current original table header height for coordinate transformation
+                let yInOriginalBody = firstPoint.y - currentOriginalTheadHeightForCoordTransform;
                 let xInOriginalBody = firstPoint.x;
                 let yOnExportCanvas = yInOriginalBody * yScaleFactor;
                 let xOnExportCanvas = xInOriginalBody * xScaleFactor;
+                
                 if (obj.tool === "pen" || obj.tool === "line") {
                     ctx.moveTo(xOnExportCanvas, yOnExportCanvas);
                 }
+                
                 if (obj.tool === 'pen') {
                     for (let i = 1; i < obj.points.length; i++) {
-                        yInOriginalBody = obj.points[i].y - originalTheadHeightForCoordTransform;
+                        yInOriginalBody = obj.points[i].y - currentOriginalTheadHeightForCoordTransform;
                         xInOriginalBody = obj.points[i].x;
                         ctx.lineTo(xInOriginalBody * xScaleFactor, yInOriginalBody * yScaleFactor);
                     }
                 } else if (obj.tool === 'line' && obj.points.length >= 2) {
                     const p1 = obj.points[1];
-                    yInOriginalBody = p1.y - originalTheadHeightForCoordTransform;
+                    yInOriginalBody = p1.y - currentOriginalTheadHeightForCoordTransform;
                     xInOriginalBody = p1.x;
                     ctx.lineTo(xInOriginalBody * xScaleFactor, yInOriginalBody * yScaleFactor);
                 } else if (obj.tool === 'rectangle' && obj.points.length >= 2) {
-                    const p0_y = (obj.points[0].y - originalTheadHeightForCoordTransform) * yScaleFactor;
+                    const p0_y = (obj.points[0].y - currentOriginalTheadHeightForCoordTransform) * yScaleFactor;
                     const p0_x = obj.points[0].x * xScaleFactor;
-                    const p1_y = (obj.points[1].y - originalTheadHeightForCoordTransform) * yScaleFactor;
+                    const p1_y = (obj.points[1].y - currentOriginalTheadHeightForCoordTransform) * yScaleFactor;
                     const p1_x = obj.points[1].x * xScaleFactor;
                     ctx.rect(p0_x, p0_y, p1_x - p0_x, p1_y - p0_y);
                 } else if (obj.tool === 'ellipse' && obj.points.length >= 2) {
-                    const p0_y = (obj.points[0].y - originalTheadHeightForCoordTransform) * yScaleFactor;
+                    const p0_y = (obj.points[0].y - currentOriginalTheadHeightForCoordTransform) * yScaleFactor;
                     const p0_x = obj.points[0].x * xScaleFactor;
-                    const p1_y = (obj.points[1].y - originalTheadHeightForCoordTransform) * yScaleFactor;
+                    const p1_y = (obj.points[1].y - currentOriginalTheadHeightForCoordTransform) * yScaleFactor;
                     const p1_x = obj.points[1].x * xScaleFactor;
                     const centerX = (p0_x + p1_x) / 2;
                     const centerY = (p0_y + p1_y) / 2;
@@ -542,7 +596,9 @@ window.XSheetApp.ExportHandler = {
                 ctx.stroke();
             });
         });
-        console.log(`ExportHandler Drawings: canvas created with ${drawingCount} objects, perfect alignment maintained`);
+        
+        const customColumnCount = this.projectData.customColumns?.length || 0;
+        console.log(`ExportHandler Drawings: canvas created with ${drawingCount} objects, ${customColumnCount} custom columns, perfect alignment maintained`);
     },
 
     cleanupExportPage: function () {
